@@ -136,7 +136,8 @@ mobile screen ───┘                                            │
 ```
 
 - `api`: Zod 검증 실패 → 400 `VALIDATION_FAILED`. 처리되지 않은 예외 → 500 `INTERNAL`, 서버 로그에 스택, 응답에는 메시지만.
-- `api-client`: 비-2xx → `ApiError { code, message, status }` 를 던진다. 네트워크 실패 → `ApiError { code: 'NETWORK' }`. 클라이언트가 `code` 로 분기할 수 있게 한다.
+- `api-client`: 4xx·5xx 에러 바디 → `ApiError { code, message, status }` 를 던진다. 네트워크 실패 → `ApiError { code: 'NETWORK', status: null }`. JSON이 아닌 응답(프록시가 돌려주는 HTML, 빈 바디) → `ApiError { code: 'MALFORMED_RESPONSE' }` — Zod·구문 오류가 클라이언트로 새어나가지 않게 한다. 클라이언트는 `code` 로만 분기한다.
+- **예외:** `/health` 의 degraded 응답(503)은 던지지 않고 그대로 반환한다. DB 장애 상태를 화면에 보여주는 것이 이 엔드포인트의 용도이므로 예외로 만들면 쓸 수 없다. 응답 타입은 `{ status: 'ok' | 'degraded', db: 'ok' | 'error', version: string }` 이고, HTTP 상태는 각각 200·503이다.
 - `worker`: 잡 실패는 pg-boss 재시도에 맡기고, 재시도 소진 시 실패 로그를 남긴다.
 
 ## 7. 테스트 전략
@@ -163,4 +164,4 @@ DB를 쓰는 테스트는 실제 Postgres를 쓴다 — PGroonga·pgvector가 �
 1. `groonga/pgroonga` 베이스에 pgvector를 설치하는 가장 단순한 방법 (apt 패키지 가용 여부, 아니면 소스 빌드). arm64(Apple Silicon)에서 동작해야 한다.
 2. Expo isolated 설치가 이 구성에서 실제로 문제없이 도는지. 안 되면 hoisted로 전환하고 그 사실을 기록한다.
 3. `@crxjs/vite-plugin` 의 MV3 지원 현황 — 메인테넌스 상태를 확인하고, 불안하면 Vite 다중 엔트리 수동 설정으로 대체한다.
-4. Turborepo가 Expo 개발 서버와 함께 돌 때의 터미널 출력 문제 — 필요하면 `mobile` 을 `pnpm dev` 대상에서 빼고 별도 명령으로 둔다.
+4. Turborepo가 Expo 개발 서버와 함께 돌 때의 터미널 출력 문제. `pnpm dev` 는 web·api·worker 세 프로세스만 띄우고 `mobile` 은 `pnpm dev:mobile` 로 분리하는 것을 기본으로 한다 — Expo는 대화형 터미널을 쓰므로 turbo의 출력 다중화와 맞지 않는다. 함께 돌려도 문제없다면 합친다.
