@@ -13,7 +13,9 @@
     "test": "turbo run test",
     "dev": "turbo run dev --filter=!@rebomi/mobile",
     "dev:mobile": "turbo run dev --filter=@rebomi/mobile",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:migrate": "pnpm --filter @rebomi/db migrate",
+    "db:generate": "pnpm --filter @rebomi/db generate"
   },
   "devDependencies": {
     "@rebomi/config": "workspace:*",

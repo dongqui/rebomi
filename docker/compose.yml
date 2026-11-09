@@ -1,0 +1,24 @@
+services:
+  postgres:
+    build:
+      context: ./postgres
+    image: rebomi-postgres:local
+    container_name: rebomi-postgres
+    environment:
+      POSTGRES_USER: rebomi
+      POSTGRES_PASSWORD: rebomi
+      POSTGRES_DB: rebomi
+    ports:
+      - '5432:5432'
+    volumes:
+      # postgres 18+ 이미지는 /var/lib/postgresql 하나를 마운트해야 한다.
+      # /var/lib/postgresql/data 에 걸면 기동을 거부한다 (docker-library/postgres#1259).
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U rebomi -d rebomi']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

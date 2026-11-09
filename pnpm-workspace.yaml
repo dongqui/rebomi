@@ -1,3 +1,8 @@
 packages:
   - apps/*
   - packages/*
+
+# pnpm 11은 의존성의 설치 스크립트를 기본 차단한다.
+# 네이티브 바이너리를 내려받아야 하는 패키지만 허용한다.
+allowBuilds:
+  esbuild: true
