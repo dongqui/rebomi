@@ -1,0 +1,24 @@
+{
+  "name": "rebomi",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "dev": "turbo run dev --filter=!@rebomi/mobile",
+    "dev:mobile": "turbo run dev --filter=@rebomi/mobile",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@rebomi/config": "workspace:*",
+    "prettier": "^3.9.10",
+    "turbo": "^2.11.10",
+    "typescript": "^6.0.3"
+  }
+}

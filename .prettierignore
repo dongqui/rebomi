@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+dist/
+.next/
+.turbo/
+.superpowers/
+# 스펙·계획·PRD는 기록물이다. 자동 재포맷이 diff를 더럽힌다.
+docs/
