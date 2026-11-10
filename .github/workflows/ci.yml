@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # services: 는 레지스트리 이미지만 받는다. PGroonga·pgvector를 담은 우리
+      # 이미지는 여기서 직접 빌드해 띄운다.
+      - name: Postgres 이미지 빌드
+        run: docker build -t rebomi-postgres:ci docker/postgres
+
+      - name: Postgres 기동
+        run: |
+          docker run -d --name rebomi-postgres \
+            -e POSTGRES_USER=rebomi \
+            -e POSTGRES_PASSWORD=rebomi \
+            -e POSTGRES_DB=rebomi \
+            -p 5432:5432 \
+            rebomi-postgres:ci
+          for i in $(seq 1 60); do
+            if docker exec rebomi-postgres pg_isready -U rebomi -d rebomi; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Postgres가 기동하지 않았습니다"
+          docker logs rebomi-postgres
+          exit 1
+
+      - name: 환경변수 준비
+        run: cp .env.example .env
+
+      - run: pnpm db:migrate
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
