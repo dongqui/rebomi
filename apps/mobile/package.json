@@ -1,0 +1,28 @@
+{
+  "name": "@rebomi/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "dev": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "lint": "eslint App.tsx index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rebomi/api-client": "workspace:*",
+    "@rebomi/api-contract": "workspace:*",
+    "expo": "~58.0.23",
+    "expo-status-bar": "~58.0.4",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@rebomi/config": "workspace:*",
+    "@types/react": "~19.3.0",
+    "dotenv": "^17.2.3",
+    "eslint": "^10.14.0",
+    "typescript": "~6.0.3"
+  }
+}
