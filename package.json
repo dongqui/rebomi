@@ -11,7 +11,7 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "dev": "turbo run dev --filter=!@rebomi/mobile",
+    "dev": "turbo run dev --filter=@rebomi/web --filter=@rebomi/api --filter=@rebomi/worker",
     "dev:mobile": "turbo run dev --filter=@rebomi/mobile",
     "format": "prettier --write .",
     "db:migrate": "pnpm --filter @rebomi/db migrate",

@@ -1,0 +1,29 @@
+{
+  "name": "@rebomi/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "dev": "next dev --port 3000",
+    "start": "next start --port 3000"
+  },
+  "dependencies": {
+    "@rebomi/api-client": "workspace:*",
+    "@rebomi/api-contract": "workspace:*",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@rebomi/config": "workspace:*",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "dotenv": "^17.2.3",
+    "eslint": "^10.14.0",
+    "typescript": "^6.0.3"
+  }
+}
