@@ -5,7 +5,7 @@ description: Use when given a Rebomi GitHub issue number to work on or check —
 
 # Rebomi Issue 실행·정리
 
-Issue 번호 하나를 받아 GitHub 상태를 실제로 갱신하면서 Superpowers로 구현하고, 완료 기준을 충족하면 닫는다.
+Issue 번호 하나를 받아 GitHub 상태를 실제로 갱신하면서 Superpowers로 구현하고, 완료 기준을 충족하면 닫는다. 이 스킬은 Issue와 GitHub 상태만 다룬다. 설계·계획·구현·테스트·리뷰는 Superpowers에 맡긴다.
 
 **REQUIRED:** 시작할 때 `docs/workflow/github.md`를 읽는다. 도구, 상태 라벨, 브랜치·PR 규칙, 완료 기준이 거기 있다.
 
@@ -15,7 +15,7 @@ Issue 번호 하나를 받아 GitHub 상태를 실제로 갱신하면서 Superpo
 
 - Issue 본문, 열림/닫힘(닫혔다면 사유), 라벨, 댓글 전체
 - 연결된 PR: `Closes #N`·`Refs #N`을 가진 PR과 `issue/N-*` 브랜치의 PR (열린 것·병합된 것·닫힌 것), 열린 PR의 CI 결과
-- 로컬·원격의 `issue/N-*` 브랜치, 그 브랜치의 `docs/superpowers/specs|plans/*issue-N-*`
+- 로컬·원격의 `issue/N-*` 브랜치와 거기 남은 설계·계획 문서
 - "선행 Issue"에 적힌 각 Issue: 닫혔는지, **병합으로 완료된 것인지**
 
 아래 표를 **위에서부터 읽어 처음 맞는 행**을 따른다.
@@ -38,34 +38,14 @@ Issue 번호 하나를 받아 GitHub 상태를 실제로 갱신하면서 Superpo
 
 1. **읽기** — Issue 본문, "PRD 참조"에 적힌 문서의 **그 절**, 그 절이 인용한 다른 문서의 요구사항 ID·공통 규칙 절, 관련 코드. 기능 문서를 통째로 읽거나 인용되지 않은 기능 문서를 읽는 데서 시작하지 않는다. 구현 중 공통 계약(상태·인증·API)에 닿으면 `docs/architecture.md`의 해당 절로 넓힌다.
 2. **실행 가능 확인** — 완료 조건 하나하나가 검증 가능한가. 아니면 §0 표의 `needs-decision` 행으로 간다.
-3. **브랜치** — `origin/main`의 최신 커밋에서 `issue/<번호>-<슬러그>`를 만든다. **REQUIRED SUB-SKILL:** superpowers:using-git-worktrees (브랜치 이름은 이 규칙을 따르게 한다)
+3. **브랜치** — `origin/main`의 최신 커밋에서 `issue/<번호>-<슬러그>`를 만든다.
 4. **진행 중 표시** — 브랜치를 만든 뒤 라벨을 `status:in-progress`로 바꾸고, 브랜치 이름을 적은 시작 댓글을 남긴다.
 
-## 2. Superpowers로 구현
+## 2. 구현
 
-Issue의 목표·범위·완료 조건이 요구사항이다. 설치된 Superpowers 스킬을 쓴다. 여기서 절차를 다시 정의하지 않는다.
+**Superpowers를 쓴다.** Issue의 목표·범위·완료 조건을 요구사항으로 넘기고, 진행 방식은 Superpowers를 따른다.
 
-| 단계 | 스킬 | 비고 |
-| --- | --- | --- |
-| 설계 | superpowers:brainstorming | Issue가 설계 판단을 남긴 경우. `docs/superpowers/specs/YYYY-MM-DD-issue-<N>-<주제>-design.md` |
-| 계획 | superpowers:writing-plans | `docs/superpowers/plans/YYYY-MM-DD-issue-<N>-<주제>.md` |
-| 구현 | superpowers:subagent-driven-development 또는 superpowers:executing-plans, superpowers:test-driven-development | |
-| 막힘 | superpowers:systematic-debugging | |
-| 검증 | superpowers:verification-before-completion | 완료 조건을 **하나씩** 실제로 확인한다. `pnpm lint && pnpm typecheck && pnpm test && pnpm build` |
-| 리뷰 | superpowers:requesting-code-review | |
-| 마무리 | superpowers:finishing-a-development-branch | 선택지는 언제나 **push + PR**이다. 로컬 병합을 고르지 않는다. worktree는 PR이 병합될 때까지 둔다 |
-
-**Superpowers가 사용자 승인을 기다리는 지점**
-
-"#N 진행해줘"는 그 Issue의 범위 안에서 PR까지 가라는 요청이다.
-
-| 결정의 종류 | 처리 |
-| --- | --- |
-| 기술 결정 (라이브러리, 스키마 모양, 파일 구조, 테스트 방식) | 묻지 않고 정한다. 근거와 함께 Issue 댓글과 PR 본문에 남긴다 |
-| 제품 동작 결정 (사용자에게 보이는 동작, 한도, 문구의 뜻, 완료 조건의 해석) | 임의로 정하지 않는다. 아래 "제품 결정이 필요해지면" |
-| 설계·계획 문서 자체의 승인 | 기다리지 않는다. 문서를 브랜치에 커밋하고 계속한다. 사용자가 이 Issue에 대해 "설계부터 보여줘"라고 했으면 그때는 기다린다 |
-
-공통 계약이 생기거나 바뀌면 `docs/architecture.md`를 같은 PR에서 고친다.
+공통 계약이 생기거나 바뀌면 `docs/architecture.md`를 같은 PR에서 고친다. 구현 중 내린 중요한 결정은 Issue 댓글로 남긴다.
 
 **범위를 지킨다**
 
@@ -91,7 +71,7 @@ Issue의 목표·범위·완료 조건이 요구사항이다. 설치된 Superpow
 4. CI 결과를 확인한다. 실패하면 같은 브랜치에서 고친다. 고치지 못하면 라벨을 `status:in-progress`로 되돌리고 원인을 댓글로 남긴다.
 5. **Issue를 닫지 않는다. PR을 병합하지 않는다.**
 
-사용자에게 보고: 무엇을 만들었는지, 완료 조건별 검증 결과, CI 결과, PR 링크, 내린 기술 결정, 남은 결정·차단 사항, 병합은 사용자 몫이라는 것.
+사용자에게 보고: 무엇을 만들었는지, 완료 조건별 검증 결과, CI 결과, PR 링크, 중요한 결정, 남은 결정·차단 사항, 병합은 사용자 몫이라는 것.
 
 ## 3. 정리 (상태 확인·완료 처리)
 

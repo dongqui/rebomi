@@ -42,7 +42,7 @@
 | "이 PRD를 GitHub 이슈로 등록해줘" | `rebomi-issues` |
 | "#23 진행해줘", "#23 상태 확인하고 완료됐으면 정리해줘" | `rebomi-issue-run` |
 
-구현·테스트·리뷰 절차는 Superpowers를 그대로 쓴다. PR 병합은 사용자가 한다.
+Issue는 초안을 사용자가 승인한 뒤에 등록한다. 구현·테스트·리뷰 절차는 Superpowers를 그대로 쓴다. PR 병합은 사용자가 한다.
 
 ## 명령
 
