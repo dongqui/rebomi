@@ -1,0 +1,12 @@
+{
+  "extends": "@rebomi/config/tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // fetch·Response·Headers 타입만 필요하다. @types/node 를 쓰면 이 패키지가
+    // Node 전용으로 보이게 되고, 이 패키지는 React Native에서도 돌아야 한다.
+    "lib": ["es2023", "dom"],
+    "types": []
+  },
+  "include": ["src/**/*"]
+}
