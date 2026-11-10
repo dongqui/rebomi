@@ -2,7 +2,9 @@
 
 저장한 콘텐츠를 잊지 않도록 다시 보여주고, 필요한 순간 빠르게 찾아준다.
 
-제품 정의는 [docs/PRD-v0.5.md](docs/PRD-v0.5.md) 에 있다. 이 저장소는 현재
+제품 정의는 [docs/product.md](docs/product.md) 와 [docs/features/](docs/features/) 에,
+기술 구성은 [docs/architecture.md](docs/architecture.md) 에 있다
+([docs/PRD-v0.5.md](docs/PRD-v0.5.md) 는 이력용 원본). 이 저장소는 현재
 **스캐폴드 단계**다 — 네 클라이언트와 서버·워커가 한 레포에서 함께 돌고
 `/health` 한 경로가 DB까지 닿는 것까지만 구현돼 있다. 기능 코드는 없다.
 

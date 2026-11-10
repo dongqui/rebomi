@@ -1,0 +1,166 @@
+# Rebomi — 아키텍처 기준 문서
+
+실제 스캐폴드(2026-11-10 기준)를 근거로 한다. 제품 요구사항은 [product.md](product.md)와 [기능 문서](features/)에 있다.
+스캐폴드의 설계 근거는 [스캐폴드 설계 스펙](superpowers/specs/2026-11-05-rebomi-monorepo-scaffold-design.md)에 있다.
+
+표기: **구현됨 / 골격만 / 없음 / 확인 필요**, **[제안]** 은 원문 PRD에 없는 설계 제안, **D-xx** 는 [product.md 미결정 사항](product.md#9-미결정-사항).
+
+## 1. 구성과 현재 상태
+
+pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
+
+| 경로 | 역할 | 기술 | 현재 상태 |
+| --- | --- | --- | --- |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함) 하나. 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12 | **골격만.** `noop` 큐 하나와 1분 주기 스케줄. 실제 잡 없음 |
+| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **골격만.** 루트 페이지 하나가 `/health`를 호출해 표시. 라우팅·화면·인증 없음 |
+| `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
+| `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
+| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디 |
+| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()` 하나. 타임아웃, `getToken` 훅, `ApiError` 변환 |
+| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화) 하나 |
+| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)` 테이블, PGroonga·pgvector 확장 활성화 |
+| `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
+| `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
+
+- **인증: 없음.** `apps/api/src/auth.ts`의 `requireAuth`는 Bearer 형식만 확인하고 토큰을 검증하지 않으며, 적용된 라우트가 없다.
+- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`·`extension`·`mobile`에는 자동 테스트가 없다. E2E 없음.
+- **CI:** `.github/workflows/ci.yml`이 push·PR마다 Postgres 이미지 빌드 → migrate → lint → typecheck → test → build를 돌린다. 모바일 네이티브 빌드(EAS) 없음.
+- **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다.
+- **확인 필요:** 스캐폴드 스펙 9장의 미결(Expo isolated 설치의 네이티브 빌드 동작, @crxjs 유지보수 상태)은 기능 개발 중 실제 빌드로 확인한다. 스캐폴드의 실행 가능 여부는 이 문서 작성 시 다시 실행해 보지 않았다 — README와 CI 구성에 근거한다.
+
+## 2. 패키지 경계 (바꾸지 않는 규칙)
+
+```
+extension ─┐
+web ───────┼─→ api-client ─→ api-contract ←─ api ─→ db ─→ Postgres
+mobile ────┘                                  │ └→ core
+                                              └─→ pg-boss ─→ worker ─→ db, core
+```
+
+- `api-contract`가 서버와 클라이언트 사이의 **유일한 계약**이다. 엔드포인트를 추가하면 여기에 Zod 스키마를 먼저 둔다.
+- 세 클라이언트는 `api-client`만으로 서버와 통신한다. `api-client`는 `fetch` 외 플랫폼 API를 쓰지 않는다(React Native 번들 호환).
+- `core`는 DB·HTTP를 모르는 순수 함수다. URL 정규화, 재노출 선정 규칙, RRF 결합처럼 입출력이 없는 로직이 여기 온다.
+- API 응답은 계약의 JSON 스키마로 직렬화해 계약에 없는 필드가 나가지 못하게 한다(`routes/health.ts`의 방식).
+- 에러는 `{ error: { code, message, details? } }` 한 모양이고 클라이언트는 `code`로만 분기한다. 새 코드는 `api-contract`의 `ERROR_CODES`에 추가한다.
+
+## 3. 인증과 기기 동기화
+
+| 책임 | 위치 | 상태 |
+| --- | --- | --- |
+| 사용자 식별·세션 발급·검증 | `apps/api` (`requireAuth` 자리) | 없음 |
+| 토큰 보관·전달 | 각 클라이언트가 `api-client`의 `getToken`을 구현 (웹, 확장 `chrome.storage`, 모바일 `SecureStore`) | 훅만 있음 |
+| 공유 확장과 메인 앱의 세션 공유 | iOS App Group, Android 공유 저장소 **[원문]** | 없음 |
+| 기기 간 동기화 | 서버가 단일 원본. 클라이언트는 서버 상태를 조회한다 **[제안]** — 오프라인 편집·충돌 해결은 요구되지 않았다 | 없음 |
+
+로그인 수단, 세션 방식, "동기화"의 반영 시점은 **D-08**이다. 결정 전에는 인증 구현 Issue를 실행하지 않는다.
+
+모든 콘텐츠 데이터는 **비공개 기본값**이며 소유 사용자만 접근한다. 콘텐츠를 다루는 모든 쿼리는 사용자 ID로 범위를 제한한다. **[원문 11.8]**
+
+## 4. 콘텐츠의 공통 상태
+
+서로 다른 축을 한 필드에 섞지 않는다. 아래 다섯 축은 독립적으로 저장한다. 테이블·컬럼 이름은 구현 Issue에서 정한다(현재 스키마에는 `users`뿐이다).
+
+| 축 | 값 | 근거 |
+| --- | --- | --- |
+| **보관 상태** | Inbox / 보관됨 / 휴지통 | [원문 4.5] Inbox는 30일 뒤 자동으로 보관됨. 휴지통은 30일 뒤 영구 삭제 |
+| **링크 상태** | 정상 / 링크 소멸 | [원문 4.5] 링크 소멸은 "어느 상태에나 겹쳐 붙는 플래그". **[제안]** 판정 전·일시 실패를 구분하는 값은 D-04 결정 뒤 추가 |
+| **추출 수준** | 본문 / 일부 / 메타데이터만 | [원문 4.1] 콘텐츠마다 저장하고 화면에 표시 |
+| **AI 처리 상태** | 요약: 생성 중 / 완료 / 실패 / 본문 없음 | [원문 4.2] **[제안]** 임베딩 처리 상태는 원문에 없다. 사용자에게 보이지 않는 내부 상태로 따로 둔다 |
+| **재노출 포함 여부** | 포함 / 제외 | [원문 4.4] "보관 상태와 별도로 관리". 기본값은 출처에 따라 다르다 → [resurfacing](features/resurfacing.md) |
+
+함께 저장하는 속성: 출처 경로(확장·모바일·웹·가져오기), 가져온 폴더명, 정규화된 URL, 저장일, 한 줄 메모.
+
+**[제안] 전이 규칙** — 원문에서 직접 읽히는 것만 적는다. 나머지는 해당 Issue의 설계에서 정하고 이 표에 추가한다.
+
+| 전이 | 조건 |
+| --- | --- |
+| Inbox → 보관됨 | 사용자의 보관 액션, 또는 30일 경과 |
+| Inbox·보관됨 → 휴지통 | 사용자의 삭제 액션 |
+| 휴지통 → 이전 상태 | 삭제 복구 (복구 시 어느 상태로 돌아가는지는 원문에 없다 — 설계에서 결정) |
+| 휴지통 → 영구 삭제 | 30일 경과 |
+
+## 5. 수집 → 처리 → 검색 흐름
+
+```
+[클라이언트]                       [api]                         [worker]
+확장: DOM 본문 캡처 ─┐
+iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 감지 ─→ 잡 큐잉 ─→ 메타데이터 수집
+모바일 공유: 텍스트   │   (본문 포함)    콘텐츠 행 생성(즉시 응답)          서버 보조 추출 (본문이 없을 때)
+웹: URL만 ───────────┘                                                    링크 생존 확인
+                                                                          요약 → 임베딩(청크)
+                                       검색 요청 ←── 키워드(PGroonga) + 의미(pgvector) → RRF
+```
+
+- **저장은 동기, 처리는 비동기.** 저장 요청은 콘텐츠 행을 만들고 바로 응답한다. 요약·임베딩이 끝나지 않아도 목록과 키워드 검색에 나타나야 한다. **[원문 4.1, 4.3]**
+- **본문 추출 우선순위:** 클라이언트 캡처 → 공유 텍스트 → 서버 fetch → 메타데이터만. 클라이언트가 본문을 보냈으면 서버 fetch는 하지 않는다(보조). **[원문 4.1]**
+- **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름은 한 곳(`QUEUES`)에 둔다. 실패는 pg-boss 재시도에 맡긴다.
+- **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
+- **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**
+
+## 6. 재노출의 책임
+
+| 책임 | 위치 |
+| --- | --- |
+| 선정 규칙(순수 함수: 후보와 설정을 받아 회차를 돌려준다) | `packages/core` **[제안]** |
+| 주기 실행, 회차 저장 | `apps/worker` 스케줄러 |
+| 홈 피드 조회, 카드 액션 반영 | `apps/api` |
+| 피드 표시와 액션 UI | `apps/web`, `apps/mobile` |
+| 푸시 발송 | `apps/worker` → 푸시 서비스(미정) → `apps/mobile` |
+| 노출·액션 이벤트 기록(H2 판단 지표) | `apps/api` — 계측 저장 방식은 미정 |
+
+선정은 규칙 기반이다(P0). 규칙은 [resurfacing](features/resurfacing.md)에 있다.
+
+## 7. 비용 통제와 사용량 집행
+
+상품 정책(한도 수치)은 [billing](features/billing.md)에 있다. 여기는 **어디서 집행하는가**만 적는다.
+
+| 장치 | 집행 위치 |
+| --- | --- |
+| 저장 개수 한도 | `apps/api` — 저장 요청 시점 |
+| 가져오기 개수·횟수 한도 | `apps/api` — 가져오기 접수 시점 |
+| AI 요약·임베딩 월 한도 | `apps/worker` — 잡을 실행하기 직전. 초과분은 메타데이터만 유지 |
+| 본문 입력 토큰 상한(예: 4,000) | `apps/worker` — 요약 잡 |
+| 링크 소멸 콘텐츠 AI 생략 | `apps/worker` — 링크 생존 확인이 요약보다 앞선다 |
+| 동일 URL 요약·임베딩 캐시 공유(공개 페이지 한정) | `apps/worker` — 공개 판정은 D-12 |
+| 대량 가져오기 순차 처리(최근 북마크부터) | `apps/worker` — 큐 우선순위 |
+
+한도는 클라이언트가 아니라 서버에서만 집행한다. 클라이언트는 남은 한도를 표시할 뿐이다. 한도 초과 시의 사용자 동작은 **D-03**.
+
+목표 단위 경제: Pro 사용자 1인당 월 AI 비용 ≤ 구독료의 15%. 건당 비용은 Phase 2에서 측정해 기록한다.
+
+## 8. 개인정보
+
+- 클라이언트 캡처는 로그인·페이월 뒤 본문까지 서버에 저장한다. 캡처 전에 "이 페이지 본문도 저장됩니다"를 안내한다. **[원문 11.8]**
+- 외부 AI로 본문을 보낼 때의 데이터 정책을 명시한다.
+- 내보내기·삭제 지원 범위는 D-06.
+
+## 9. 확정 기술과 검증할 후보
+
+원문 PRD에 기술명이 있다는 이유만으로 도입을 확정하지 않는다. "확정"은 저장소에 실제로 들어와 있는 것이다.
+
+| 영역 | 확정 (저장소에 있음) | 후보·미정 (원문 언급) | 결정 시점 |
+| --- | --- | --- | --- |
+| 워크스페이스·언어 | pnpm 11, Turborepo, TypeScript strict ESM | — | — |
+| API | Fastify 5 + Zod 4 | — | — |
+| DB·ORM | PostgreSQL, Drizzle | — | — |
+| 잡 큐 | pg-boss | — | 교체 지점은 `apps/worker` 내부 |
+| 키워드 검색 | PGroonga 확장 활성화됨(인덱스·쿼리는 없음) | 대안 pg_bigm | Phase 2 평가 |
+| 의미 검색 | pgvector 확장 활성화됨(인덱스·쿼리는 없음) | 임베딩 모델: bge-m3, 대안 multilingual-e5-large. 호스팅 방식 미정 | Phase 2, 한·영 혼합 쿼리 100개 비교 |
+| 결과 결합 | — | RRF | 검색 구현 시 |
+| 요약 LLM | — | "저비용 모델" — 제공자·모델 미정 | 요약 구현 시, 건당 비용 측정 |
+| 웹 | Next.js 16 | — | — |
+| 확장 | Vite + @crxjs, MV3 | 본문 추출: Readability 계열 라이브러리(미설치) | capture 구현 시 |
+| 모바일 | Expo SDK 58 | iOS Share Extension + App Group, Android Share Intent 구현 방식(Expo config plugin 등) 미정 | capture 구현 시 |
+| 인증 | — | 미정 (D-08) | 인증 Issue 전 |
+| 푸시 | — | "모바일 푸시 알림 서비스" — 제공자 미정 | resurfacing 푸시 구현 시 |
+| 결제 | — | Stripe 또는 앱 내 결제 (D-10) | billing 구현 시 |
+| 테스트 | Vitest (실제 Postgres) | E2E 도구 미정 | 첫 사용자 흐름 연결 검증 시 |
+
+**PRD와 저장소의 차이 (어느 쪽이 맞는지 단정하지 않는다)**
+
+- PRD 8장은 서버를 "공통 API 서버"로만 적는다. 저장소는 `api`와 `worker`를 별도 앱으로 나눴다(스캐폴드 스펙 3장의 결정).
+- PRD는 Chrome 확장을 "React + TypeScript + Readability"로 적는다. 저장소에는 React + TypeScript만 있고 Readability는 설치되지 않았다.
+- PRD 4.1은 중복 URL 감지를 "정규화된 URL 기준, 트래킹 파라미터 제거"로 적는다. `core.normalizeUrl`은 `utm_*`, `fbclid`, `gclid`, `igshid`, `ref`만 제거한다. 이 목록이 충분한지는 capture 구현 시 확인한다.
+
+대규모 검색 전용 인프라나 복잡한 RAG 아키텍처는 처음부터 도입하지 않는다. **[원문 8장]**

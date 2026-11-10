@@ -1,5 +1,9 @@
 # PRD — Rebomi (가칭) v0.5
 
+> **이력용 스냅샷 (2026-11-10 동결).** 이 문서는 더 이상 갱신하지 않으며 기준이 아니다.
+> 현재 기준은 [product.md](product.md)(제품), [architecture.md](architecture.md)(기술), [features/](features/)(기능별 요구사항)이다.
+> 코드 주석의 "PRD 4.1" 같은 참조는 이 문서의 절 번호를 가리킨다.
+
 Nov 5, 2026 · @Dongjin Kim
 
 ## v0.4 대비 변경 요약
