@@ -1,8 +1,9 @@
+import { fileURLToPath } from 'node:url'
 import { defineManifest } from '@crxjs/vite-plugin'
 import { config } from 'dotenv'
 
 // 이 모듈이 평가되는 시점에 환경변수가 있어야 host_permissions 를 채울 수 있다.
-config({ path: new URL('../../.env', import.meta.url).pathname, quiet: true })
+config({ path: fileURLToPath(new URL('../../.env', import.meta.url)), quiet: true })
 
 const apiBaseUrl = process.env.VITE_API_BASE_URL
 

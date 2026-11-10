@@ -150,3 +150,74 @@ describe('CORS', () => {
     expect(response.headers['access-control-allow-origin']).toBeUndefined()
   })
 })
+
+describe('Fastify가 만드는 응답도 공통 포맷을 지킨다', () => {
+  it('없는 경로에 NOT_FOUND 포맷으로 404를 돌려준다', async () => {
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+
+    const response = await app.inject({ method: 'GET', url: '/존재하지-않는-경로' })
+
+    expect(response.statusCode).toBe(404)
+    expect((response.json() as { error: { code: string } }).error.code).toBe('NOT_FOUND')
+  })
+
+  it('깨진 JSON 바디를 500이 아니라 400 VALIDATION_FAILED로 돌려준다', async () => {
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    app.post('/__echo', () => ({ ok: true }))
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/__echo',
+      headers: { 'content-type': 'application/json' },
+      payload: '{깨진',
+    })
+
+    // 클라이언트 잘못을 서버 장애로 보고하면 재시도 로직이 틀린 판단을 한다.
+    expect(response.statusCode).toBe(400)
+    expect((response.json() as { error: { code: string } }).error.code).toBe('VALIDATION_FAILED')
+  })
+
+  it('지원하지 않는 Content-Type을 500이 아니라 415로 돌려준다', async () => {
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    app.post('/__echo', () => ({ ok: true }))
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/__echo',
+      headers: { 'content-type': 'text/foo' },
+      payload: 'x',
+    })
+
+    expect(response.statusCode).toBe(415)
+    expect((response.json() as { error: { code: string } }).error.code).toBeTruthy()
+  })
+
+  it('statusCode가 붙은 에러의 상태를 존중한다', async () => {
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    app.get('/__forbidden', () => {
+      const error = new Error('내부 사정') as Error & { statusCode: number }
+      error.statusCode = 403
+      throw error
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/__forbidden' })
+
+    expect(response.statusCode).toBe(403)
+    expect(JSON.stringify(response.json())).not.toContain('내부 사정')
+  })
+})
+
+describe('응답 계약 강제', () => {
+  it('계약에 없는 필드는 직렬화 단계에서 떨어진다', async () => {
+    // Zod의 parse는 모르는 키를 조용히 버리므로, parse 결과를 비교하는 테스트는
+    // 서버가 내부 정보를 덧붙여도 초록색이다. 원본 바디를 본다.
+    const db = createDb(connectionString!)
+    closers.push(() => db.close())
+    const app = track(buildApp({ db, corsOrigins: CORS_ORIGINS }))
+
+    const response = await app.inject({ method: 'GET', url: '/health' })
+    const raw = JSON.parse(response.body) as Record<string, unknown>
+
+    expect(Object.keys(raw).sort()).toEqual(['db', 'status', 'version'])
+  })
+})

@@ -118,3 +118,59 @@ describe('인증 헤더', () => {
     expect(headers.has('authorization')).toBe(false)
   })
 })
+
+describe('타임아웃', () => {
+  it('응답이 오지 않으면 NETWORK 코드의 ApiError로 끊는다', async () => {
+    stubFetch(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new Error('aborted'))
+          })
+        }),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', timeoutMs: 50 })
+
+    const error = await client.health().then(
+      () => null,
+      (caught: unknown) => caught,
+    )
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).code).toBe('NETWORK')
+  })
+})
+
+describe('요청 조립 실패', () => {
+  it('헤더로 쓸 수 없는 토큰이 와도 ApiError로 던진다', async () => {
+    // Headers는 Latin-1 밖 문자에 TypeError를 던진다. 그것이 호출자에게
+    // 그대로 새면 "클라이언트는 ApiError만 던진다"는 계약이 거짓이 된다.
+    for (const badToken of ['토큰', 'abc def\u0000']) {
+      stubFetch(() => Promise.resolve(json(okHealth)))
+      const client = createApiClient({ baseUrl: 'http://api.test', getToken: () => badToken })
+
+      const error = await client.health().then(
+        () => null,
+        (caught: unknown) => caught,
+      )
+
+      expect(error).toBeInstanceOf(ApiError)
+    }
+  })
+})
+
+describe('비동기 토큰', () => {
+  it('getToken이 Promise를 돌려줘도 Authorization 헤더를 붙인다', async () => {
+    // MV3의 chrome.storage와 Expo SecureStore는 비동기 전용이다.
+    const spy = stubFetch(() => Promise.resolve(json(okHealth)))
+    const client = createApiClient({
+      baseUrl: 'http://api.test',
+      getToken: () => Promise.resolve('t0ken'),
+    })
+
+    await client.health()
+
+    const headers = new Headers(spy.mock.calls[0]?.[1]?.headers)
+    expect(headers.get('authorization')).toBe('Bearer t0ken')
+  })
+})

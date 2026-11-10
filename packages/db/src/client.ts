@@ -14,8 +14,31 @@ export type Db = {
  * 질의는 내보내지 않는다 — 스키마와 이 팩토리만이 이 패키지의 표면이고,
  * 질의는 apps/api 와 apps/worker 가 각자 작성한다 (스펙 3장).
  */
-export function createDb(connectionString: string): Db {
-  const pool = new Pool({ connectionString })
+/**
+ * 타임아웃이 없으면 가장 흔한 DB 장애(무응답)에서 호출이 영원히 매달린다 —
+ * docker pause, max_connections 소진, 방화벽 DROP. 그러면 `/health` 가 503을
+ * 돌려주지 못하고 멈춰서, 모니터링이 degraded 를 보지 못한다.
+ */
+const DEFAULT_TIMEOUT_MS = 5_000
+
+export type CreateDbOptions = {
+  /** 연결 수립(핸드셰이크 포함) 제한. */
+  connectionTimeoutMs?: number
+  /** 개별 질의 제한. */
+  statementTimeoutMs?: number
+}
+
+export function createDb(connectionString: string, options: CreateDbOptions = {}): Db {
+  const connectionTimeoutMillis = options.connectionTimeoutMs ?? DEFAULT_TIMEOUT_MS
+  const statementTimeout = options.statementTimeoutMs ?? DEFAULT_TIMEOUT_MS
+
+  const pool = new Pool({
+    connectionString,
+    connectionTimeoutMillis,
+    statement_timeout: statementTimeout,
+    query_timeout: statementTimeout,
+    idleTimeoutMillis: 30_000,
+  })
   return {
     drizzle: drizzle(pool, { schema }),
     close: () => pool.end(),

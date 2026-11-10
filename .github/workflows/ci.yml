@@ -1,13 +1,18 @@
 name: CI
 
 on:
+  # 기능 브랜치 푸시에서도 돌아야 한다. main 만 걸면 머지된 뒤에야 처음 돈다.
   push:
-    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4

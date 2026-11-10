@@ -1,7 +1,8 @@
+import { fileURLToPath } from 'node:url'
 import { config } from 'dotenv'
 import { z } from 'zod'
 
-config({ path: new URL('../../../.env', import.meta.url).pathname, quiet: true })
+config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true })
 
 const schema = z.object({
   DATABASE_URL: z.string().min(1),

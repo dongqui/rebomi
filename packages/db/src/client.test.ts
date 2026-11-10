@@ -1,3 +1,4 @@
+import net from 'node:net'
 import { describe, it, expect, beforeAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { createDb, ping, schema } from './index.js'
@@ -67,4 +68,26 @@ describe('users 테이블', () => {
     await db.drizzle.delete(schema.users).where(sql`email = ${email}`)
     await db.close()
   })
+})
+
+describe('타임아웃', () => {
+  it('TCP는 받지만 응답하지 않는 서버에서 ping이 매달리지 않고 실패한다', async () => {
+    // Postgres가 죽는 가장 흔한 형태는 거부가 아니라 무응답이다
+    // (docker pause, max_connections 소진, 방화벽 DROP).
+    const sockets: net.Socket[] = []
+    const blackhole = net.createServer((socket) => sockets.push(socket))
+    await new Promise<void>((resolve) => blackhole.listen(0, '127.0.0.1', resolve))
+    const { port } = blackhole.address() as net.AddressInfo
+
+    const db = createDb(`postgres://rebomi:rebomi@127.0.0.1:${port}/rebomi`)
+    const startedAt = Date.now()
+
+    await expect(ping(db)).rejects.toThrow()
+    expect(Date.now() - startedAt).toBeLessThan(15_000)
+
+    await db.close().catch(() => undefined)
+    // 열린 소켓이 남으면 close()의 콜백이 영원히 오지 않는다.
+    for (const socket of sockets) socket.destroy()
+    await new Promise<void>((resolve) => blackhole.close(() => resolve()))
+  }, 30_000)
 })

@@ -7,6 +7,8 @@ packages:
 allowBuilds:
   esbuild: true
 
+# 이 목록은 비어 있지 않아야 한다. 지우면 lockfile이 공급망 정책에 걸려
+# `pnpm install` 이 실패한다 (정책은 pnpm 설정이 아니라 환경에서 온다).
 minimumReleaseAgeExclude:
   - '@next/env@16.4.6'
   - '@next/swc-darwin-arm64@16.4.6'

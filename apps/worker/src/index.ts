@@ -21,6 +21,8 @@ export type Worker = {
   readonly queue: string
   send(payload: NoopPayload): Promise<string | null>
   stop(): Promise<void>
+  /** 큐까지 지우고 멈춘다. 테스트가 쓴다 — 큐를 남기면 pg-boss 유지보수가 계속 훑는다. */
+  destroy(): Promise<void>
 }
 
 /**
@@ -45,9 +47,16 @@ export async function startWorker(options: StartWorkerOptions): Promise<Worker> 
   await boss.createQueue(queue)
 
   // 핸들러가 던지면 pg-boss가 그 잡만 실패 처리하고 워커는 계속 돈다.
+  // 다만 pg-boss의 error 이벤트는 내부 오류만 받으므로, 잡 실패는 여기서 직접
+  // 적는다 — 적지 않으면 1분마다 도는 스케줄러가 조용히 전부 실패해도 보이지 않는다.
   await boss.work<NoopPayload>(queue, { pollingIntervalSeconds: 1, batchSize: 1 }, async (jobs) => {
     for (const job of jobs) {
-      await handle(job.data)
+      try {
+        await handle(job.data)
+      } catch (error) {
+        log('worker: job failed', { queue, jobId: job.id, error })
+        throw error
+      }
     }
   })
 
@@ -61,9 +70,14 @@ export async function startWorker(options: StartWorkerOptions): Promise<Worker> 
 
   return {
     queue,
-    // retryLimit 0 — 스캐폴드에서는 실패한 잡을 되돌리지 않는다. 실제 잡은
-    // 큐별 정책으로 재시도를 정한다.
-    send: (payload) => boss.send(queue, payload, { retryLimit: 0 }),
+    // 재시도는 pg-boss의 큐 정책에 맡긴다 (스펙 6장). 소진된 실패는 위
+    // work 핸들러의 로그에 남는다.
+    send: (payload) => boss.send(queue, payload),
     stop: () => boss.stop({ graceful: true }),
+    destroy: async () => {
+      // 큐를 먼저 지운다 — stop() 이후에는 DB 연결이 닫혀 deleteQueue가 실패한다.
+      await boss.deleteQueue(queue)
+      await boss.stop({ graceful: true })
+    },
   }
 }
