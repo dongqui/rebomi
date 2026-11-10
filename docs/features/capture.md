@@ -83,7 +83,7 @@
 
 ## 7. 의존
 
-- [account](account.md) — 저장은 로그인한 사용자 기준이다 (D-08)
+- [account](account.md) — 저장은 로그인한 사용자 기준이다
 - [summary](summary.md) — 저장 이후의 비동기 처리
 - [billing](billing.md) — 저장 개수 한도
 - [architecture §2 패키지 경계](../architecture.md#2-패키지-경계-바꾸지-않는-규칙) — 저장 API의 계약은 `api-contract`에 둔다
