@@ -1,0 +1,30 @@
+{
+  "name": "@rebomi/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@rebomi/api-client": "workspace:*",
+    "@rebomi/api-contract": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^3.0.0",
+    "@rebomi/config": "workspace:*",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "dotenv": "^17.2.3",
+    "eslint": "^10.14.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.7"
+  }
+}
