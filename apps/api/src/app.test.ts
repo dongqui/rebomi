@@ -4,7 +4,6 @@ import { createDb, type Db } from '@rebomi/db'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from './app.js'
-import { requireAuth } from './auth.js'
 
 const connectionString = process.env.DATABASE_URL
 
@@ -16,6 +15,13 @@ const packageVersion = (
 ).version
 
 const CORS_ORIGINS = ['http://localhost:3000', 'chrome-extension://abcdefghijklmnop']
+
+/** 인증 경로는 auth.test.ts 가 본다. 여기서는 앱을 조립할 최소 설정만 준다. */
+const AUTH = {
+  jwtSecret: 'test-secret-test-secret-test-secret-0123',
+  verifiers: {},
+  secureCookies: false,
+}
 
 /** ping이 항상 거부되는 Db 더블. ping은 db.drizzle.execute를 호출한다. */
 const deadDb = (): Db => ({
@@ -49,7 +55,7 @@ describe('GET /health', () => {
   it('200과 ok 상태를 반환하고 계약을 만족한다', async () => {
     const db = createDb(connectionString!)
     closers.push(() => db.close())
-    const app = track(buildApp({ db, corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db, corsOrigins: CORS_ORIGINS, auth: AUTH }))
 
     const response = await app.inject({ method: 'GET', url: '/health' })
 
@@ -64,7 +70,7 @@ describe('GET /health', () => {
 
   // Review Focus 2
   it('DB가 죽으면 503과 degraded를 반환한다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
 
     const response = await app.inject({ method: 'GET', url: '/health' })
 
@@ -78,7 +84,7 @@ describe('GET /health', () => {
 
 describe('에러 핸들러', () => {
   it('처리되지 않은 예외를 INTERNAL 포맷으로 바꾸고 스택을 응답에 넣지 않는다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
     app.get('/__boom', () => {
       throw new Error('터지는 라우트')
     })
@@ -93,41 +99,9 @@ describe('에러 핸들러', () => {
   })
 })
 
-// Review Focus 4
-describe('requireAuth', () => {
-  const rejected = ['__none__', 'Basic abc', 'Bearer', 'Bearer   ']
-
-  it.each(rejected)('Authorization "%s" 를 401로 막는다', async (header) => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
-    app.get('/__authed', { preHandler: requireAuth }, () => ({ ok: true }))
-
-    const response = await app.inject({
-      method: 'GET',
-      url: '/__authed',
-      headers: header === '__none__' ? {} : { authorization: header },
-    })
-
-    expect(response.statusCode).toBe(401)
-    expect((response.json() as { error: { code: string } }).error.code).toBe('UNAUTHORIZED')
-  })
-
-  it('소문자 스킴 "bearer t" 는 통과시킨다 (RFC 7235)', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
-    app.get('/__authed', { preHandler: requireAuth }, () => ({ ok: true }))
-
-    const response = await app.inject({
-      method: 'GET',
-      url: '/__authed',
-      headers: { authorization: 'bearer t' },
-    })
-
-    expect(response.statusCode).toBe(200)
-  })
-})
-
 describe('CORS', () => {
   it.each(CORS_ORIGINS)('허용 오리진 %s 의 프리플라이트에 헤더를 붙인다', async (origin) => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
 
     const response = await app.inject({
       method: 'OPTIONS',
@@ -139,7 +113,7 @@ describe('CORS', () => {
   })
 
   it('허용하지 않은 오리진에는 헤더를 붙이지 않는다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
 
     const response = await app.inject({
       method: 'OPTIONS',
@@ -153,7 +127,7 @@ describe('CORS', () => {
 
 describe('Fastify가 만드는 응답도 공통 포맷을 지킨다', () => {
   it('없는 경로에 NOT_FOUND 포맷으로 404를 돌려준다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
 
     const response = await app.inject({ method: 'GET', url: '/존재하지-않는-경로' })
 
@@ -162,7 +136,7 @@ describe('Fastify가 만드는 응답도 공통 포맷을 지킨다', () => {
   })
 
   it('깨진 JSON 바디를 500이 아니라 400 VALIDATION_FAILED로 돌려준다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
     app.post('/__echo', () => ({ ok: true }))
 
     const response = await app.inject({
@@ -178,7 +152,7 @@ describe('Fastify가 만드는 응답도 공통 포맷을 지킨다', () => {
   })
 
   it('지원하지 않는 Content-Type을 500이 아니라 415로 돌려준다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
     app.post('/__echo', () => ({ ok: true }))
 
     const response = await app.inject({
@@ -193,7 +167,7 @@ describe('Fastify가 만드는 응답도 공통 포맷을 지킨다', () => {
   })
 
   it('statusCode가 붙은 에러의 상태를 존중한다', async () => {
-    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db: deadDb(), corsOrigins: CORS_ORIGINS, auth: AUTH }))
     app.get('/__forbidden', () => {
       const error = new Error('내부 사정') as Error & { statusCode: number }
       error.statusCode = 403
@@ -213,7 +187,7 @@ describe('응답 계약 강제', () => {
     // 서버가 내부 정보를 덧붙여도 초록색이다. 원본 바디를 본다.
     const db = createDb(connectionString!)
     closers.push(() => db.close())
-    const app = track(buildApp({ db, corsOrigins: CORS_ORIGINS }))
+    const app = track(buildApp({ db, corsOrigins: CORS_ORIGINS, auth: AUTH }))
 
     const response = await app.inject({ method: 'GET', url: '/health' })
     const raw = JSON.parse(response.body) as Record<string, unknown>
