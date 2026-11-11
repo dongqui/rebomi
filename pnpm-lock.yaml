@@ -186,6 +186,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@rebomi/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       dotenv:
         specifier: ^17.2.3
         version: 17.4.2
@@ -252,6 +255,9 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15))
 
   packages/config:
     dependencies:

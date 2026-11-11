@@ -1,7 +1,5 @@
-/** 큐 이름은 한 곳에만 둔다 — 보내는 쪽과 받는 쪽이 문자열을 따로 쓰면 조용히 어긋난다. */
-export const QUEUES = {
-  NOOP: 'noop',
-} as const
+// 큐 이름은 `@rebomi/core` 한 곳에 있다. api도 같은 정의를 쓴다.
+export { QUEUES } from '@rebomi/core'
 
 export type NoopPayload = { n: number }
 
