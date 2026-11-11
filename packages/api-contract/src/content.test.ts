@@ -77,12 +77,19 @@ describe('createContentRequestSchema', () => {
 })
 
 describe('listContentsResponseSchema', () => {
-  it('콘텐츠 배열을 items로 받는다', () => {
-    expect(listContentsResponseSchema.parse({ items: [content] })).toEqual({ items: [content] })
+  it('콘텐츠 배열을 items로, 다음 페이지 커서를 nextCursor로 받는다', () => {
+    const response = { items: [content], nextCursor: 'opaque-cursor' }
+    expect(listContentsResponseSchema.parse(response)).toEqual(response)
   })
 
-  it('빈 목록을 받아들인다', () => {
-    expect(listContentsResponseSchema.parse({ items: [] })).toEqual({ items: [] })
+  it('마지막 페이지는 nextCursor가 null이다', () => {
+    const response = { items: [], nextCursor: null }
+    expect(listContentsResponseSchema.parse(response)).toEqual(response)
+  })
+
+  it('nextCursor가 빠지면 거부한다', () => {
+    // 빠진 것과 "더 없음"을 구분한다 — 서버가 필드를 잊으면 클라이언트가 조용히 멈춘다.
+    expect(listContentsResponseSchema.safeParse({ items: [] }).success).toBe(false)
   })
 })
 

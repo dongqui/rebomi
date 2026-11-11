@@ -64,6 +64,11 @@ export type CreateContentRequest = z.infer<typeof createContentRequestSchema>
 /** 콘텐츠 목록 응답. */
 export const listContentsResponseSchema = z.object({
   items: z.array(contentSchema),
+  /**
+   * 다음 페이지를 요청할 때 그대로 돌려보내는 불투명한 값. 더 없으면 null.
+   * 클라이언트는 내용을 해석하지 않는다.
+   */
+  nextCursor: z.string().nullable(),
 })
 
 export type ListContentsResponse = z.infer<typeof listContentsResponseSchema>
