@@ -78,11 +78,29 @@ async function tableNames(pool: Pool): Promise<string[]> {
 }
 
 describe('마이그레이션 적용', () => {
-  it('빈 DB에 전체를 적용하면 users와 contents가 생긴다', async () => {
+  it('빈 DB에 전체를 적용하면 모든 테이블이 생긴다', async () => {
     await withScratchDatabase(async (pool) => {
       await migrate(drizzle(pool), { migrationsFolder })
 
-      expect(await tableNames(pool)).toEqual(expect.arrayContaining(['users', 'contents']))
+      expect(await tableNames(pool)).toEqual(
+        expect.arrayContaining(['users', 'contents', 'auth_identities', 'refresh_tokens']),
+      )
+    })
+  }, 60_000)
+
+  it('contents까지 있는 기존 DB에 적용하면 기존 행을 유지한 채 인증 테이블이 생긴다', async () => {
+    await withScratchDatabase(async (pool) => {
+      await migrate(drizzle(pool), { migrationsFolder: migrationsUpTo('0002_contents') })
+      expect(await tableNames(pool)).not.toContain('auth_identities')
+      await pool.query(`insert into users (email) values ('existing@example.com')`)
+
+      await migrate(drizzle(pool), { migrationsFolder })
+
+      expect(await tableNames(pool)).toEqual(
+        expect.arrayContaining(['auth_identities', 'refresh_tokens']),
+      )
+      const users = await pool.query<{ email: string }>('select email from users')
+      expect(users.rows).toEqual([{ email: 'existing@example.com' }])
     })
   }, 60_000)
 

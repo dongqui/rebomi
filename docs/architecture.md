@@ -11,22 +11,22 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
-| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함) 하나. 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`. 공통 에러 핸들러와 CORS 구현됨. 콘텐츠 라우트 없음 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12 | **골격만.** `noop` 큐 하나와 1분 주기 스케줄. 실제 잡 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **골격만.** 루트 페이지 하나가 `/health`를 호출해 표시. 라우팅·화면·인증 없음 |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
-| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 콘텐츠·생성 요청·목록 응답 스키마(라우트는 없음) |
-| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()` 하나. 타임아웃, `getToken` 훅, `ApiError` 변환 |
+| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·생성 요청·목록 응답 스키마(콘텐츠 라우트는 없음) |
+| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
 | `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), 큐 이름(`QUEUES`)과 잡 페이로드 타입 |
-| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `contents`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
+| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
-- **인증: 없음.** `apps/api/src/auth.ts`의 `requireAuth`는 Bearer 형식만 확인하고 토큰을 검증하지 않으며, 적용된 라우트가 없다.
+- **인증: 서버와 `api-client`만 구현됨(§3).** 로그인 화면과 각 클라이언트의 토큰 보관은 없다. `requireAuth`를 적용한 라우트는 아직 없다 — 콘텐츠 라우트가 생길 때 붙인다.
 - **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`·`extension`·`mobile`에는 자동 테스트가 없다. E2E 없음.
 - **CI:** `.github/workflows/ci.yml`이 push·PR마다 Postgres 이미지 빌드 → migrate → lint → typecheck → test → build를 돌린다. 모바일 네이티브 빌드(EAS) 없음.
-- **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다.
+- **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다. 예외는 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS`로, 비어 있어도 API는 뜨고 그 제공자의 로그인만 503이다.
 - **확인 필요:** 스캐폴드 스펙 9장의 미결(Expo isolated 설치의 네이티브 빌드 동작, @crxjs 유지보수 상태)은 기능 개발 중 실제 빌드로 확인한다. 스캐폴드의 실행 가능 여부는 이 문서 작성 시 다시 실행해 보지 않았다 — README와 CI 구성에 근거한다.
 
 ## 2. 패키지 경계 (바꾸지 않는 규칙)
@@ -48,12 +48,49 @@ mobile ────┘                                  │ └→ core
 
 | 책임 | 위치 | 상태 |
 | --- | --- | --- |
-| Google·Apple 신원 토큰 검증, 계정 생성·조회, 액세스·갱신 토큰 발급·갱신·폐기, 요청의 사용자 식별 | `apps/api` (`requireAuth` 자리). 외부 인증 서비스를 쓰지 않고 직접 구현한다 | 없음 |
-| 토큰 보관·전달 | 각 클라이언트가 `api-client`의 `getToken`을 구현 (웹, 확장 `chrome.storage`, 모바일 `SecureStore`) | 훅만 있음 |
+| Google·Apple 신원 토큰 검증, 계정 생성·조회, 액세스·갱신 토큰 발급·갱신·폐기 | `apps/api` — `routes/auth.ts`, `auth/*`. 외부 인증 서비스를 쓰지 않고 직접 구현한다 | 구현됨 |
+| 요청의 사용자 식별 | `apps/api/src/auth.ts`의 `requireAuth`(`app.requireAuth`). 통과한 요청은 `request.userId`를 가진다 | 구현됨. 적용된 라우트는 아직 없음 |
+| 토큰 보관·전달, 만료 시 자동 갱신 | 각 클라이언트가 `api-client`의 `tokenStore`(`get`/`set`)를 구현 (확장 `chrome.storage`, 모바일 `SecureStore`). 웹은 메모리 + 쿠키 | `api-client` 구현됨. 클라이언트별 저장소 없음 |
 | 공유 확장과 메인 앱의 세션 공유 | iOS App Group, Android 공유 저장소 **[원문]** | 없음 |
 | 기기 간 동기화 | 서버가 단일 원본. 클라이언트는 서버 상태를 조회한다 **[제안]** — 오프라인 편집·충돌 해결은 요구되지 않았다 | 없음 |
 
-로그인은 Google·Apple 소셜 로그인이고, 세션은 만료가 있는 액세스 토큰 + 갱신 토큰이다. 검증된 이메일이 같으면 같은 계정이다. 규칙은 [account](features/account.md) §4에 있다. 토큰 수명·저장 형태·서명 방식은 구현 Issue의 설계에서 정해 여기에 기록한다. 확장·모바일의 로그인 방식과 "동기화"의 반영 시점은 **D-08**로 남아 있다.
+로그인은 Google·Apple 소셜 로그인이고, 검증된 이메일이 같으면 같은 계정이다. 제품 규칙은 [account](features/account.md) §4에 있다. 확장·모바일의 로그인 방식과 "동기화"의 반영 시점은 **D-08**로 남아 있다.
+
+**토큰 (2026-11-11 결정)**
+
+| | 형태 | 수명 | 저장 |
+| --- | --- | --- | --- |
+| 액세스 토큰 | JWT, HS256, 서버 비밀키 `AUTH_JWT_SECRET`(32자 이상). 클레임 `sub`(사용자 ID)·`iss=rebomi`·`aud=rebomi-api`·`iat`·`exp` | 15분 | 서버에 저장하지 않는다. 요청마다 서명만 검증한다 |
+| 갱신 토큰 | 256비트 난수(base64url) | 60일. 갱신에 쓸 때마다 그 시점부터 60일로 연장 | `refresh_tokens`에 SHA-256 해시만. 원문은 클라이언트만 가진다 |
+
+- 갱신 토큰은 **회전하지 않는다.** 로그아웃(폐기)이나 만료 전까지 같은 토큰을 쓴다 — 여러 탭이나 앱·공유 확장이 동시에 갱신해도 서로를 끊지 않게 하기 위해서다.
+- 로그아웃은 그 갱신 토큰 하나만 폐기한다. 이미 발급된 액세스 토큰은 만료(최대 15분)까지 유효하다.
+- 서명·검증 라이브러리는 `jose`다.
+
+**제공자 신원 토큰** — 클라이언트가 Google·Apple에서 받은 신원 토큰(JWT)을 `POST /auth/login`으로 보내면, 서버가 제공자의 공개키(JWKS)로 서명·만료·발급자·대상(audience)을 검증한다. 대상은 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS`(쉼표 구분)에 있는 우리 앱의 클라이언트 ID여야 한다. 신원은 `auth_identities`에 `(provider, subject)`로 남고, 한 계정에 두 제공자의 신원이 붙을 수 있다. nonce 검증은 아직 없다 — 클라이언트의 로그인 흐름이 정해질 때 넣는다.
+
+**갱신 토큰 전달** — 로그인 요청의 `session`으로 고른다.
+
+| `session` | 쓰는 곳 | 갱신 토큰 |
+| --- | --- | --- |
+| `body`(기본) | 확장, 모바일 | 응답 본문 |
+| `cookie` | 웹 | `rebomi_refresh` 쿠키로만 — `HttpOnly`, `SameSite=Lax`, `Path=/auth`, `Max-Age` 60일, 운영(`NODE_ENV=production`)에서 `Secure`. 본문의 `refreshToken`은 `null` |
+
+쿠키 방식은 웹과 API가 같은 사이트(같은 등록 도메인)에 배포되는 것을 전제로 한다. 쿠키로 온 갱신·로그아웃 요청은 `Origin`이 `CORS_ORIGINS`에 있을 때만 받는다(아니면 403).
+
+**인증 에러 코드** — `api-contract`의 `ERROR_CODES`.
+
+| 코드 | 상태 | 언제 | 클라이언트가 할 일 |
+| --- | --- | --- | --- |
+| `UNAUTHORIZED` | 401 | 액세스 토큰이 없거나 형식·서명이 틀림 | 로그인으로 |
+| `ACCESS_TOKEN_EXPIRED` | 401 | 액세스 토큰 만료 | `api-client`가 갱신 후 원래 요청을 한 번 다시 보낸다 |
+| `INVALID_PROVIDER_TOKEN` | 401 | 제공자 신원 토큰의 서명·만료·발급자·대상 검증 실패 | 로그인 실패 표시 |
+| `REFRESH_TOKEN_EXPIRED` | 401 | 갱신 토큰 만료 | 로그인으로 |
+| `REFRESH_TOKEN_INVALID` | 401 | 폐기되었거나 모르는 갱신 토큰, 또는 갱신 토큰 없음 | 로그인으로 |
+| `EMAIL_NOT_VERIFIED` | 403 | 처음 보는 신원인데 제공자가 검증한 이메일이 없음 | 다른 계정으로 로그인하라고 안내 |
+| `PROVIDER_NOT_CONFIGURED` | 503 | 그 제공자의 클라이언트 ID가 서버에 없음 | 그 로그인 수단을 쓸 수 없다고 표시 |
+
+거부 사유의 세부는 응답에 넣지 않고 서버 로그에만 남긴다. 토큰, `Authorization`·`Cookie` 헤더, 요청 본문은 로그에 쓰지 않는다.
 
 모든 콘텐츠 데이터는 **비공개 기본값**이며 소유 사용자만 접근한다. 콘텐츠를 다루는 모든 쿼리는 사용자 ID로 범위를 제한한다. **[원문 11.8]**
 
@@ -155,7 +192,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | 웹 | Next.js 16 | — | — |
 | 확장 | Vite + @crxjs, MV3 | 본문 추출: Readability 계열 라이브러리(미설치) | capture 구현 시 |
 | 모바일 | Expo SDK 58 | iOS Share Extension + App Group, Android Share Intent 구현 방식(Expo config plugin 등) 미정 | capture 구현 시 |
-| 인증 | — | 직접 구현, Google·Apple 소셜 로그인, 액세스+갱신 토큰 (결정됨, 미구현). 토큰 서명·검증 라이브러리는 미정 | 인증 Issue의 설계 |
+| 인증 | 직접 구현, Google·Apple 소셜 로그인, 액세스(JWT HS256)+갱신 토큰, `jose`, `@fastify/cookie` (§3) | — | — |
 | 푸시 | — | "모바일 푸시 알림 서비스" — 제공자 미정 | resurfacing 푸시 구현 시 |
 | 결제 | — | Stripe 또는 앱 내 결제 (D-10) | billing 구현 시 |
 | 테스트 | Vitest (실제 Postgres) | E2E 도구 미정 | 첫 사용자 흐름 연결 검증 시 |

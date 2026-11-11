@@ -79,6 +79,10 @@ pnpm dev:mobile
 에서 확장 ID를 확인해 `CORS_ORIGINS` 에 `chrome-extension://<your-id>` 를 덧붙여야
 팝업에서 API 호출이 통과한다.
 
+인증 값은 `.env.example` 에 빈 키로만 있다. `AUTH_JWT_SECRET`(32자 이상)을 채우지
+않으면 API가 기동하지 않는다. `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS` 는 비워 둬도
+API는 뜨고, 그 제공자의 로그인만 503을 돌려준다.
+
 ## Chrome 확장 로드
 
 ```bash

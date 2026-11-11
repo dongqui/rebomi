@@ -12,13 +12,16 @@ import {
 } from 'drizzle-orm/pg-core'
 
 /**
- * 계정. 스캐폴드 단계에서는 인증이 붙을 자리만 잡는다 (스펙 1장 "범위 밖").
+ * 계정. 이메일은 제공자가 검증한 것만, 소문자로 넣는다.
  */
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+/** 로그인 수단 (account.md §4). */
+export const AUTH_PROVIDERS = ['google', 'apple'] as const
 
 /*
  * 콘텐츠의 상태 축 (architecture.md §4). 축마다 컬럼이 따로 있고 한 필드에 섞지 않는다.
@@ -91,4 +94,50 @@ export const contents = pgTable(
     check('contents_summary_status_check', oneOf(table.summaryStatus, SUMMARY_STATUSES)),
     check('contents_metadata_status_check', oneOf(table.metadataStatus, METADATA_STATUSES)),
   ],
+)
+
+/**
+ * 제공자 신원. 한 계정에 Google·Apple 신원이 각각 붙을 수 있다 — 검증된 이메일이
+ * 같으면 같은 계정이다 (account.md ACC-7).
+ */
+export const authIdentities = pgTable(
+  'auth_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider', { enum: AUTH_PROVIDERS }).notNull(),
+    /** 제공자가 준 사용자 식별자(`sub`). 이메일이 바뀌어도 변하지 않는다. */
+    subject: text('subject').notNull(),
+    /** 제공자가 알려 온 이메일. 계정의 이메일과 다를 수 있어 기록만 한다. */
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('auth_identities_provider_subject_unique').on(table.provider, table.subject),
+    index('auth_identities_user_id_idx').on(table.userId),
+    check('auth_identities_provider_check', oneOf(table.provider, AUTH_PROVIDERS)),
+  ],
+)
+
+/**
+ * 갱신 토큰. 토큰 자체가 아니라 SHA-256 해시만 둔다 — DB가 새어도 토큰으로 쓸 수 없다.
+ * 회전하지 않는다: 로그아웃(`revoked_at`)이나 만료 전까지 같은 토큰을 쓴다.
+ */
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    /** 갱신에 쓸 때마다 뒤로 밀린다. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('refresh_tokens_user_id_idx').on(table.userId)],
 )
