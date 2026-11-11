@@ -16,10 +16,10 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **골격만.** 루트 페이지 하나가 `/health`를 호출해 표시. 라우팅·화면·인증 없음 |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
-| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디 |
+| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 콘텐츠·생성 요청·목록 응답 스키마(라우트는 없음) |
 | `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()` 하나. 타임아웃, `getToken` 훅, `ApiError` 변환 |
-| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화) 하나 |
-| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)` 테이블, PGroonga·pgvector 확장 활성화 |
+| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), 큐 이름(`QUEUES`)과 잡 페이로드 타입 |
+| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `contents`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
@@ -59,17 +59,20 @@ mobile ────┘                                  │ └→ core
 
 ## 4. 콘텐츠의 공통 상태
 
-서로 다른 축을 한 필드에 섞지 않는다. 아래 다섯 축은 독립적으로 저장한다. 테이블·컬럼 이름은 구현 Issue에서 정한다(현재 스키마에는 `users`뿐이다).
+서로 다른 축을 한 필드에 섞지 않는다. 아래 축은 `contents` 테이블(`packages/db`)의 서로 다른 컬럼이고, 계약(`packages/api-contract`의 `contentSchema`)에서도 서로 다른 필드다. 계약의 필드 이름은 컬럼 이름의 camelCase이고 값 이름은 같다.
 
-| 축 | 값 | 근거 |
-| --- | --- | --- |
-| **보관 상태** | Inbox / 보관됨 / 휴지통 | [원문 4.5] Inbox는 30일 뒤 자동으로 보관됨. 휴지통은 30일 뒤 영구 삭제 |
-| **링크 상태** | 정상 / 링크 소멸 | [원문 4.5] 링크 소멸은 "어느 상태에나 겹쳐 붙는 플래그". **[제안]** 판정 전·일시 실패를 구분하는 값은 D-04 결정 뒤 추가 |
-| **추출 수준** | 본문 / 일부 / 메타데이터만 | [원문 4.1] 콘텐츠마다 저장하고 화면에 표시 |
-| **AI 처리 상태** | 요약: 생성 중 / 완료 / 실패 / 본문 없음 | [원문 4.2] **[제안]** 임베딩 처리 상태는 원문에 없다. 사용자에게 보이지 않는 내부 상태로 따로 둔다 |
-| **재노출 포함 여부** | 포함 / 제외 | [원문 4.4] "보관 상태와 별도로 관리". 기본값은 출처에 따라 다르다 → [resurfacing](features/resurfacing.md) |
+| 축 | 컬럼 | 값 (저장되는 이름) | 근거 |
+| --- | --- | --- | --- |
+| **보관 상태** | `archive_state` | Inbox `inbox` / 보관됨 `archived` / 휴지통 `trashed`. 기본 `inbox` | [원문 4.5] Inbox는 30일 뒤 자동으로 보관됨. 휴지통은 30일 뒤 영구 삭제 |
+| **링크 상태** | `link_state` | 정상 `ok` / 링크 소멸 `dead`. 기본 `ok` | [원문 4.5] 링크 소멸은 "어느 상태에나 겹쳐 붙는 플래그". **[제안]** 판정 전·일시 실패를 구분하는 값은 D-04 결정 뒤 추가 |
+| **추출 수준** | `extraction_level` | 본문 `full` / 일부 `partial` / 메타데이터만 `metadata_only`. 기본 `metadata_only` (본문을 확보하면 올린다) | [원문 4.1] 콘텐츠마다 저장하고 화면에 표시 |
+| **AI 처리 상태** | `summary_status` | 요약: 생성 중 `pending` / 완료 `done` / 실패 `failed` / 본문 없음 `no_content`. 기본 `pending` | [원문 4.2] **[제안]** 임베딩 처리 상태는 원문에 없다. 사용자에게 보이지 않는 내부 상태로 따로 둔다(컬럼은 임베딩 Issue에서 추가) |
+| **재노출 포함 여부** | `resurfacing_included` | 포함 `true` / 제외 `false`. DB 기본값 없음 — 넣는 쪽이 정한다 | [원문 4.4] "보관 상태와 별도로 관리". 기본값은 출처에 따라 다르다 → [resurfacing](features/resurfacing.md) |
+| **메타데이터 처리 상태** | `metadata_status` | 처리 중 `pending` / 완료 `done` / 실패 `failed`. 기본 `pending` | 원문에 없는 축 — 서버 측 메타데이터 수집·보조 추출 잡의 진행을 담는다(Issue #1에서 추가). 추출 수준(결과)과 다르다: 처리가 `done`이어도 추출 수준은 `metadata_only`일 수 있다 |
 
-함께 저장하는 속성: 출처 경로(확장·모바일·웹·가져오기), 가져온 폴더명, 정규화된 URL, 저장일, 한 줄 메모.
+값은 text 컬럼 + check 제약으로 저장한다(pg enum이 아니다 — 값 추가가 제약 교체로 끝난다). 값 목록은 `packages/db`의 스키마와 `packages/api-contract`에 각각 있고, 두 패키지는 서로 의존하지 않는다(§2). 어긋남은 DB 행을 계약 타입으로 옮기는 `apps/api`의 타입체크가 잡는다.
+
+함께 저장하는 속성과 컬럼: 소유 사용자 `user_id`(사용자 삭제 시 함께 삭제), 원본 URL `url`, 정규화된 URL `normalized_url`, 제목 `title`, 도메인 `domain`, 대표 이미지 `image_url`, 출처 경로 `source`(확장 `extension` / 모바일 `mobile` / 웹 `web` / 가져오기 `import`), 저장일 `saved_at`. `(user_id, normalized_url)`은 유일하다 — 중복 저장은 DB가 거부한다. 가져온 폴더명과 한 줄 메모는 아직 컬럼이 없다(각 기능 Issue에서 추가).
 
 **[제안] 전이 규칙** — 원문에서 직접 읽히는 것만 적는다. 나머지는 해당 Issue의 설계에서 정하고 이 표에 추가한다.
 
@@ -94,7 +97,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 
 - **저장은 동기, 처리는 비동기.** 저장 요청은 콘텐츠 행을 만들고 바로 응답한다. 요약·임베딩이 끝나지 않아도 목록과 키워드 검색에 나타나야 한다. **[원문 4.1, 4.3]**
 - **본문 추출 우선순위:** 클라이언트 캡처 → 공유 텍스트 → 서버 fetch → 메타데이터만. 클라이언트가 본문을 보냈으면 서버 fetch는 하지 않는다(보조). **[원문 4.1]**
-- **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름은 한 곳(`QUEUES`)에 둔다. 실패는 pg-boss 재시도에 맡긴다.
+- **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름과 페이로드 타입은 한 곳(`packages/core`의 `QUEUES`, `ContentProcessPayload`)에 두고 api(보내는 쪽)와 worker(받는 쪽)가 같은 것을 쓴다. 저장된 콘텐츠의 서버 측 처리 큐는 `content-process`이고 페이로드는 `{ contentId }`다. 실패는 pg-boss 재시도에 맡긴다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
 - **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**
 
