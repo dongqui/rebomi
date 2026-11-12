@@ -186,6 +186,19 @@ describe('POST /contents', () => {
     expect(await queuedJobsFor(content.id)).toEqual([{ state: 'created' }])
   })
 
+  it('잡에 재시도 정책을 실어 보낸다', async () => {
+    const app = newApp()
+    const user = await newUser()
+
+    const { content } = await saveOk(app, user.token, 'https://example.com/retry-policy')
+
+    const result = await db.drizzle.execute(
+      sql`select retry_limit, retry_delay, retry_backoff from pgboss.job
+          where name = ${jobs.queue} and data->>'contentId' = ${content.id}`,
+    )
+    expect(result.rows).toEqual([{ retry_limit: 3, retry_delay: 30, retry_backoff: true }])
+  })
+
   it('트래킹 파라미터만 다른 두 번째 저장은 중복으로 응답하고 콘텐츠가 늘지 않는다', async () => {
     const app = newApp()
     const user = await newUser()

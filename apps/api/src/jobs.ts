@@ -1,4 +1,4 @@
-import { QUEUES, type ContentProcessPayload } from '@rebomi/core'
+import { CONTENT_PROCESS_RETRY, QUEUES, type ContentProcessPayload } from '@rebomi/core'
 import type { DbTransaction } from '@rebomi/db'
 // pg-boss 12는 순수 ESM이고 default export가 없다.
 import { PgBoss } from 'pg-boss'
@@ -48,7 +48,8 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<Star
   return {
     queue,
     enqueueContentProcess: async (tx, payload) => {
-      const jobId = await boss.send(queue, payload, { db: tx })
+      // 재시도 정책은 잡에 실어 보낸다 (core의 CONTENT_PROCESS_RETRY).
+      const jobId = await boss.send(queue, payload, { ...CONTENT_PROCESS_RETRY, db: tx })
       // null은 "넣지 않았다"는 뜻이다. 조용히 넘기면 처리되지 않는 콘텐츠가 남는다.
       if (jobId === null) throw new Error(`잡을 큐에 넣지 못했습니다: ${queue}`)
     },
