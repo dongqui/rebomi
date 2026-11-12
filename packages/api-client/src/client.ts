@@ -2,12 +2,18 @@ import {
   ERROR_CODES,
   HEALTH_ACCEPTED_STATUSES,
   apiErrorBodySchema,
+  createContentResponseSchema,
   healthResponseSchema,
+  listContentsResponseSchema,
   loginResponseSchema,
   refreshResponseSchema,
   type AuthProvider,
   type AuthUser,
+  type CreateContentRequest,
+  type CreateContentResponse,
   type HealthResponse,
+  type ListContentsQuery,
+  type ListContentsResponse,
   type SessionMode,
 } from '@rebomi/api-contract'
 import type { ZodType } from 'zod'
@@ -68,6 +74,18 @@ export type ApiClient = {
    * 그 오류를 던진다 — 서버에는 갱신 토큰이 살아 있을 수 있다는 뜻이다.
    */
   logout(): Promise<void>
+  /**
+   * URL을 저장한다. 새로 저장했으면 `status: 'created'`, 이미 저장한 URL이면
+   * `status: 'duplicate'` 와 기존 콘텐츠를 돌려준다 — 중복은 오류가 아니다.
+   *
+   * http(s) 주소가 아니면 `VALIDATION_FAILED` 코드의 `ApiError` 를 던진다.
+   */
+  saveContent(request: CreateContentRequest): Promise<CreateContentResponse>
+  /**
+   * 내 콘텐츠를 저장일 최근순으로 한 페이지 받는다. 다음 페이지는 응답의 `nextCursor` 를
+   * `cursor` 로 넘긴다. `nextCursor` 가 null이면 끝이다.
+   */
+  listContents(query?: ListContentsQuery): Promise<ListContentsResponse>
 }
 
 type RequestInitLike = {
@@ -293,6 +311,22 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     login,
     refresh,
     logout,
+    saveContent: (body) =>
+      request('/contents', createContentResponseSchema, {
+        method: 'POST',
+        body,
+        authenticated: true,
+      }),
+    listContents: (query = {}) => {
+      const params = new URLSearchParams()
+      if (query.limit !== undefined) params.set('limit', String(query.limit))
+      if (query.cursor !== undefined) params.set('cursor', query.cursor)
+      const search = params.toString()
+
+      return request(`/contents${search ? `?${search}` : ''}`, listContentsResponseSchema, {
+        authenticated: true,
+      })
+    },
   }
 }
 

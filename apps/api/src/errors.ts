@@ -63,6 +63,8 @@ export function registerErrorHandler(app: FastifyInstance): void {
   // HTML을 돌려줬다"를 구분할 수 있어야 한다.
   app.setNotFoundHandler((request, reply) => {
     request.log.warn({ url: request.url }, 'route not found')
-    return reply.status(404).send(errorBody(ERROR_CODES.NOT_FOUND, '요청한 경로가 없습니다'))
+    return reply
+      .status(404)
+      .send(errorBody(ERROR_CODES.NOT_FOUND, '요청한 경로가 없습니다'))
   })
 }
