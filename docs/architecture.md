@@ -12,14 +12,14 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
 | `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록(`POST /contents`·`GET /contents`). 공통 에러 핸들러와 CORS 구현됨 |
-| `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12 | **골격만.** `noop` 큐 하나와 1분 주기 스케줄. 실제 잡 없음 — api가 넣는 `content-process` 큐를 아직 소비하지 않는다 |
+| `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **골격만.** 루트 페이지 하나가 `/health`를 호출해 표시. 라우팅·화면·인증 없음 |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마 |
 | `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
-| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)과 잡 페이로드 타입 |
-| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
+| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)·잡 페이로드 타입·재시도 정책(`CONTENT_PROCESS_RETRY`) |
+| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`·`content_bodies`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
@@ -109,7 +109,9 @@ mobile ────┘                                  │ └→ core
 
 값은 text 컬럼 + check 제약으로 저장한다(pg enum이 아니다 — 값 추가가 제약 교체로 끝난다). 값 목록은 `packages/db`의 스키마와 `packages/api-contract`에 각각 있고, 두 패키지는 서로 의존하지 않는다(§2). 어긋남은 DB 행을 계약 타입으로 옮기는 `apps/api`의 타입체크가 잡는다.
 
-함께 저장하는 속성과 컬럼: 소유 사용자 `user_id`(사용자 삭제 시 함께 삭제), 원본 URL `url`, 정규화된 URL `normalized_url`, 제목 `title`, 도메인 `domain`, 대표 이미지 `image_url`, 출처 경로 `source`(확장 `extension` / 모바일 `mobile` / 웹 `web` / 가져오기 `import`), 저장일 `saved_at`. `(user_id, normalized_url)`은 유일하다 — 중복 저장은 DB가 거부한다. 가져온 폴더명과 한 줄 메모는 아직 컬럼이 없다(각 기능 Issue에서 추가).
+함께 저장하는 속성과 컬럼: 소유 사용자 `user_id`(사용자 삭제 시 함께 삭제), 원본 URL `url`, 정규화된 URL `normalized_url`, 제목 `title`, 설명 `description`(페이지가 스스로 밝힌 og:description 등 — 요약이 아니다), 도메인 `domain`, 대표 이미지 `image_url`, 출처 경로 `source`(확장 `extension` / 모바일 `mobile` / 웹 `web` / 가져오기 `import`), 저장일 `saved_at`. `(user_id, normalized_url)`은 유일하다 — 중복 저장은 DB가 거부한다. 가져온 폴더명과 한 줄 메모는 아직 컬럼이 없다(각 기능 Issue에서 추가).
+
+추출한 본문은 `content_bodies(content_id, text, extracted_at)`에 콘텐츠당 하나로 둔다. `contents`와 가른 이유는 크기다 — 목록 질의가 본문을 함께 읽지 않는다. 콘텐츠를 지우면 본문도 지워진다. 본문은 API 응답에 싣지 않는다(검색·요약의 입력이다).
 
 **[제안] 전이 규칙** — 원문에서 직접 읽히는 것만 적는다. 나머지는 해당 Issue의 설계에서 정하고 이 표에 추가한다.
 
@@ -119,6 +121,8 @@ mobile ────┘                                  │ └→ core
 | Inbox·보관됨 → 휴지통 | 사용자의 삭제 액션 |
 | 휴지통 → 이전 상태 | 삭제 복구 (복구 시 어느 상태로 돌아가는지는 원문에 없다 — 설계에서 결정) |
 | 휴지통 → 영구 삭제 | 30일 경과 |
+| 메타데이터 처리 `pending` → `done` | 워커가 페이지를 받아 처리함. 본문을 뽑았으면 추출 수준 `full`, 요약 상태는 `pending` 유지. 본문이 없으면 추출 수준은 그대로(`metadata_only`), 요약 상태 `no_content` |
+| 메타데이터 처리 `pending` → `failed` | 다시 해도 소용없는 오류, 또는 재시도 소진. 요약 상태 `no_content`. 콘텐츠는 남는다 |
 
 ## 5. 수집 → 처리 → 검색 흐름
 
@@ -134,9 +138,13 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 
 - **저장은 동기, 처리는 비동기.** 저장 요청은 콘텐츠 행을 만들고 바로 응답한다. 요약·임베딩이 끝나지 않아도 목록과 키워드 검색에 나타나야 한다. **[원문 4.1, 4.3]**
 - **본문 추출 우선순위:** 클라이언트 캡처 → 공유 텍스트 → 서버 fetch → 메타데이터만. 클라이언트가 본문을 보냈으면 서버 fetch는 하지 않는다(보조). **[원문 4.1]**
-- **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름과 페이로드 타입은 한 곳(`packages/core`의 `QUEUES`, `ContentProcessPayload`)에 두고 api(보내는 쪽)와 worker(받는 쪽)가 같은 것을 쓴다. 저장된 콘텐츠의 서버 측 처리 큐는 `content-process`이고 페이로드는 `{ contentId }`다. 실패는 pg-boss 재시도에 맡긴다.
+- **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름과 페이로드 타입은 한 곳(`packages/core`의 `QUEUES`, `ContentProcessPayload`)에 두고 api(보내는 쪽)와 worker(받는 쪽)가 같은 것을 쓴다. 저장된 콘텐츠의 서버 측 처리 큐는 `content-process`이고 페이로드는 `{ contentId }`다. 재시도 정책도 `core`의 `CONTENT_PROCESS_RETRY`에 있고 api가 잡에 실어 보낸다.
 - **저장 API (`POST /contents`, 구현됨):** `core.normalizeUrl`로 정규화하고 `(user_id, normalized_url)` 유일 제약으로 중복을 판정한다. 새로 저장하면 201, 이미 있으면 200이고 본문은 둘 다 `{ status: 'created' | 'duplicate', content }`다 — 중복은 오류가 아니며 기존 콘텐츠를 그대로 준다(두 번째 요청의 URL·출처로 덮어쓰지 않는다). http(s)가 아닌 입력은 400 `VALIDATION_FAILED`. `domain`은 호스트에서 앞의 `www.`만 뗀 값이다. 지금은 URL만 받는다 — 본문을 함께 받는 저장은 확장·모바일 Issue에서 더한다.
 - **행과 잡은 한 트랜잭션이다.** api는 콘텐츠 행 삽입과 `content-process` 잡 삽입을 같은 DB 트랜잭션에서 한다(`Db.transaction` + pg-boss `send`의 `db` 옵션). 잡을 넣지 못하면 행도 남지 않는다 — 행만 남으면 그 콘텐츠는 영원히 처리 중이고, 다시 저장해도 중복이라 고칠 길이 없다. api의 pg-boss는 보내기 전용이고(유지보수·스케줄 꺼짐) 소비는 worker가 한다.
+- **콘텐츠 처리 잡 (`content-process`, 구현됨):** 워커가 저장된 URL을 가져와 제목(`og:title` → `<title>`), 설명(`og:description` → meta description), 이미지(`og:image` → `twitter:image`, 절대 http(s) 주소)와 본문을 채운다. 저장한 쪽이 먼저 채운 값은 덮어쓰지 않는다. 처리 중인(`metadata_status = pending`) 행만 고치므로 같은 잡이 두 번 돌아도 결과가 같다. 지금은 모든 저장이 URL만 보내므로 항상 가져온다 — 클라이언트가 본문을 보내는 저장이 생기면 그 콘텐츠는 가져오지 않게 해야 한다.
+  - **본문 추출은 규칙 기반이다(AI를 쓰지 않는다).** Readability(`@mozilla/readability` + `linkedom`)가 비어 있지 않은 결과를 내면 길이와 무관하게 본문으로 본다. 원본 HTML은 저장하지 않고 텍스트만 20만 자까지 저장한다. AI로 본문을 뽑는 보완은 서버 추출 성공률(H4)을 재 본 뒤에 판단한다.
+  - **재시도:** 연결 실패·시간 초과·5xx·429 같은 일시 오류만 최대 3번(30초부터 두 배씩) 다시 한다. 그 밖의 4xx, HTML이 아닌 응답, 5MB 초과, 리다이렉트 5번 초과, 차단된 주소는 바로 실패로 기록한다. 마지막 시도까지 실패하면 실패로 기록하고 잡은 끝낸다 — 워커는 계속 돈다.
+  - **나가는 요청의 제한:** 주소는 사용자 입력이라 믿지 않는다. 사설·루프백·링크 로컬 주소로는 연결하지 않고(연결 직전의 DNS 결과로 판정), 리다이렉트는 직접 따라가며 매번 다시 검사한다. 요청 전체 10초, 응답 5MB(압축을 푼 크기). User-Agent는 `Mozilla/5.0 (compatible; RebomiBot/0.1)`로 봇임을 밝힌다. robots.txt는 확인하지 않는다 — 사용자가 저장한 주소 하나만 가져온다. 로그에는 콘텐츠 ID와 실패 사유만 남기고 주소는 남기지 않는다.
 - **목록 API (`GET /contents`, 구현됨):** 요청한 사용자의 콘텐츠 중 휴지통을 뺀 것을 저장일 최근순으로 준다. `limit`(기본 50, 최대 100)과 `cursor`를 받고 `{ items, nextCursor }`를 준다. 커서는 `(saved_at, id)` 키셋이고 클라이언트에게는 불투명한 문자열이다 — 중간에 새 저장이 끼어도 건너뛰거나 겹치지 않는다. 상태별 필터와 오래된 순 정렬은 아직 없다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
 - **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**
@@ -175,6 +183,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 ## 8. 개인정보
 
 - 클라이언트 캡처는 로그인·페이월 뒤 본문까지 서버에 저장한다. 캡처 전에 "이 페이지 본문도 저장됩니다"를 안내한다. **[원문 11.8]**
+- 서버가 가져온 페이지의 원본 HTML은 저장하지 않는다. 추출한 본문 텍스트만 저장하고, 콘텐츠를 지우면 함께 지운다.
 - 외부 AI로 본문을 보낼 때의 데이터 정책을 명시한다.
 - 내보내기·삭제 지원 범위는 D-06.
 
@@ -188,6 +197,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | API | Fastify 5 + Zod 4 | — | — |
 | DB·ORM | PostgreSQL, Drizzle | — | — |
 | 잡 큐 | pg-boss | — | 교체 지점은 `apps/worker` 내부 |
+| 서버 본문 추출 | `@mozilla/readability` + `linkedom` (규칙 기반) | AI 추출 보완 | H4(서버 추출 성공률) 측정 뒤 |
 | 키워드 검색 | PGroonga 확장 활성화됨(인덱스·쿼리는 없음) | 대안 pg_bigm | Phase 2 평가 |
 | 의미 검색 | pgvector 확장 활성화됨(인덱스·쿼리는 없음) | 임베딩 모델: bge-m3, 대안 multilingual-e5-large. 호스팅 방식 미정 | Phase 2, 한·영 혼합 쿼리 100개 비교 |
 | 결과 결합 | — | RRF | 검색 구현 시 |
