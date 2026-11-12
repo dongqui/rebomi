@@ -4,7 +4,9 @@ import type { Db } from '@rebomi/db'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { createRequireAuth, type AuthDeps } from './auth.js'
 import { registerErrorHandler } from './errors.js'
+import type { JobQueue } from './jobs.js'
 import { registerAuthRoutes } from './routes/auth.js'
+import { registerContentRoutes } from './routes/contents.js'
 import { registerHealthRoute } from './routes/health.js'
 
 export type BuildAppDeps = {
@@ -14,6 +16,8 @@ export type BuildAppDeps = {
   corsOrigins: string[]
   /** 토큰 서명 키와 제공자 검증기. 환경변수는 server.ts 만 읽는다. */
   auth: AuthDeps
+  /** 워커에게 넘길 잡을 큐에 넣는다. 실제 pg-boss는 server.ts 만 띄운다. */
+  jobs: JobQueue
   logger?: FastifyServerOptions['logger']
 }
 
@@ -32,6 +36,7 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
   registerErrorHandler(app)
   registerHealthRoute(app, deps.db)
   registerAuthRoutes(app, { db: deps.db, auth: deps.auth, allowedOrigins: deps.corsOrigins })
+  registerContentRoutes(app, { db: deps.db, jobs: deps.jobs })
 
   return app
 }
