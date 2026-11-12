@@ -44,3 +44,16 @@ export function normalizeUrl(input: string): string {
   const hasEmptyPath = url.pathname === '/' && url.search === ''
   return hasEmptyPath ? serialized.replace(/\/$/, '') : serialized
 }
+
+/**
+ * 콘텐츠의 도메인. 목록에 보이고 출처를 묶는 데 쓴다.
+ *
+ * 호스트에서 앞의 `www.` 만 뗀다 — `www.reddit.com` 과 `reddit.com` 이 다른 도메인으로
+ * 갈리지 않게 한다. `old.reddit.com`, `m.youtube.com` 같은 서브도메인은 그대로 둔다.
+ *
+ * @throws {InvalidUrlError} http(s) URL로 해석할 수 없는 입력
+ */
+export function domainOf(input: string): string {
+  const { hostname } = new URL(normalizeUrl(input))
+  return hostname.replace(/^www\./, '')
+}

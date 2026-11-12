@@ -3,6 +3,9 @@ import {
   contentJsonSchema,
   contentSchema,
   createContentRequestSchema,
+  createContentResponseJsonSchema,
+  createContentResponseSchema,
+  listContentsQuerySchema,
   listContentsResponseJsonSchema,
   listContentsResponseSchema,
   type Content,
@@ -97,6 +100,7 @@ describe('직렬화용 JSON 스키마', () => {
   it.each([
     ['contentJsonSchema', contentJsonSchema],
     ['listContentsResponseJsonSchema', listContentsResponseJsonSchema],
+    ['createContentResponseJsonSchema', createContentResponseJsonSchema],
   ])('%s 는 계약에 없는 필드를 허용하지 않고 $schema 키가 없다', (_name, jsonSchema) => {
     expect(jsonSchema.additionalProperties).toBe(false)
     expect(jsonSchema).not.toHaveProperty('$schema')
@@ -107,5 +111,46 @@ describe('직렬화용 JSON 스키마', () => {
       items: { items: Record<string, unknown> }
     }
     expect(properties.items.items.additionalProperties).toBe(false)
+  })
+})
+
+describe('createContentResponseSchema', () => {
+  it.each(['created', 'duplicate'] as const)('status "%s" 와 콘텐츠를 받아들인다', (status) => {
+    expect(createContentResponseSchema.parse({ status, content })).toEqual({ status, content })
+  })
+
+  it('모르는 status와 콘텐츠 없는 응답을 거부한다', () => {
+    expect(createContentResponseSchema.safeParse({ status: 'updated', content }).success).toBe(
+      false,
+    )
+    expect(createContentResponseSchema.safeParse({ status: 'duplicate' }).success).toBe(false)
+  })
+
+  it('JSON 스키마의 콘텐츠도 계약에 없는 필드를 허용하지 않는다', () => {
+    const properties = createContentResponseJsonSchema.properties as {
+      content: Record<string, unknown>
+    }
+    expect(properties.content.additionalProperties).toBe(false)
+  })
+})
+
+describe('listContentsQuerySchema', () => {
+  it('아무것도 없으면 limit은 50이고 cursor는 없다', () => {
+    expect(listContentsQuerySchema.parse({})).toEqual({ limit: 50 })
+  })
+
+  it('쿼리 문자열로 온 limit을 숫자로 바꾼다', () => {
+    expect(listContentsQuerySchema.parse({ limit: '20', cursor: 'abc' })).toEqual({
+      limit: 20,
+      cursor: 'abc',
+    })
+  })
+
+  it.each(['0', '101', '1.5', 'abc', '-1'])('limit "%s" 를 거부한다', (limit) => {
+    expect(listContentsQuerySchema.safeParse({ limit }).success).toBe(false)
+  })
+
+  it('빈 cursor를 거부한다', () => {
+    expect(listContentsQuerySchema.safeParse({ cursor: '' }).success).toBe(false)
   })
 })

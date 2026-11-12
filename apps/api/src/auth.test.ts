@@ -94,6 +94,8 @@ function newApp(overrides: Partial<BuildAppDeps['auth']> = {}, logger?: BuildApp
     db,
     corsOrigins: [ALLOWED_ORIGIN],
     logger,
+    // 인증 경로는 큐를 쓰지 않는다.
+    jobs: { enqueueContentProcess: () => Promise.resolve() },
     auth: {
       jwtSecret: JWT_SECRET,
       verifiers,

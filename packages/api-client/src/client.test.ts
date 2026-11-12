@@ -480,3 +480,139 @@ describe('토큰 저장소 실패', () => {
     expect(error).toBeInstanceOf(ApiError)
   })
 })
+
+const CONTENT = {
+  id: '5d3c1f0a-6c0e-4c57-9d0b-2f4c8b1a7e11',
+  url: 'https://example.com/a',
+  title: null,
+  domain: 'example.com',
+  imageUrl: null,
+  savedAt: '2026-11-12T03:00:00.000Z',
+  source: 'web',
+  archiveState: 'inbox',
+  linkState: 'ok',
+  extractionLevel: 'metadata_only',
+  summaryStatus: 'pending',
+  metadataStatus: 'pending',
+  resurfacingIncluded: true,
+}
+
+describe('saveContent()', () => {
+  it('새로 저장하면(201) status created와 콘텐츠를 돌려준다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json({ status: 'created', content: CONTENT }, 201)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client.saveContent({ url: 'https://example.com/a', source: 'web' })
+
+    expect(result).toEqual({ status: 'created', content: CONTENT })
+    expect(calls(spy)).toEqual(['POST /contents'])
+    expect(bodyOf(spy.mock.calls[0]?.[1])).toEqual({ url: 'https://example.com/a', source: 'web' })
+    expect(bearerOf(spy.mock.calls[0]?.[1])).toBe('Bearer t0ken')
+  })
+
+  it('이미 저장한 URL이면(200) 던지지 않고 status duplicate와 기존 콘텐츠를 돌려준다', async () => {
+    stubFetch(() => Promise.resolve(json({ status: 'duplicate', content: CONTENT }, 200)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client.saveContent({
+      url: 'https://example.com/a?utm_source=x',
+      source: 'web',
+    })
+
+    expect(result.status).toBe('duplicate')
+    expect(result.content.id).toBe(CONTENT.id)
+  })
+
+  it('검증 실패(400)는 VALIDATION_FAILED 코드의 ApiError로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        json({ error: { code: 'VALIDATION_FAILED', message: 'http 또는 https 주소만' } }, 400),
+      ),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client.saveContent({ url: 'ftp://example.com', source: 'web' }))
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).toBe('VALIDATION_FAILED')
+    expect(error.status).toBe(400)
+  })
+
+  it('액세스 토큰이 만료됐으면 갱신한 뒤 같은 본문으로 다시 보낸다', async () => {
+    const spy = stubFetch((url, init) => {
+      if (url.endsWith('/auth/refresh')) return Promise.resolve(refreshed())
+      return Promise.resolve(
+        bearerOf(init) === 'Bearer old-access'
+          ? expired()
+          : json({ status: 'created', content: CONTENT }, 201),
+      )
+    })
+    const { store } = memoryStore({ accessToken: 'old-access', refreshToken: 'refresh' })
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: store })
+
+    const result = await client.saveContent({ url: 'https://example.com/a', source: 'mobile' })
+
+    expect(result.status).toBe('created')
+    expect(calls(spy)).toEqual(['POST /contents', 'POST /auth/refresh', 'POST /contents'])
+    expect(bodyOf(spy.mock.calls[2]?.[1])).toEqual({
+      url: 'https://example.com/a',
+      source: 'mobile',
+    })
+  })
+
+  it('계약과 다른 성공 응답은 MALFORMED_RESPONSE다', async () => {
+    stubFetch(() => Promise.resolve(json({ status: 'updated', content: CONTENT }, 200)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client.saveContent({ url: 'https://example.com/a', source: 'web' }))
+
+    expect(error.code).toBe('MALFORMED_RESPONSE')
+  })
+})
+
+describe('listContents()', () => {
+  it('조건 없이 부르면 쿼리 없이 요청하고 목록을 돌려준다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json({ items: [CONTENT], nextCursor: 'next' })))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client.listContents()
+
+    expect(result).toEqual({ items: [CONTENT], nextCursor: 'next' })
+    expect(spy.mock.calls[0]?.[0]).toBe('http://api.test/contents')
+    expect(bearerOf(spy.mock.calls[0]?.[1])).toBe('Bearer t0ken')
+  })
+
+  it('limit과 cursor를 쿼리로 보낸다. cursor는 인코딩한다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json({ items: [], nextCursor: null })))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    await client.listContents({ limit: 20, cursor: 'a+b/c=&x' })
+
+    const url = new URL(spy.mock.calls[0]![0])
+    expect(url.pathname).toBe('/contents')
+    expect(url.searchParams.get('limit')).toBe('20')
+    expect(url.searchParams.get('cursor')).toBe('a+b/c=&x')
+  })
+
+  it('잘못된 커서(400)는 VALIDATION_FAILED 코드의 ApiError로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(json({ error: { code: 'VALIDATION_FAILED', message: 'x' } }, 400)),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client.listContents({ cursor: 'bad' }))
+
+    expect(error.code).toBe('VALIDATION_FAILED')
+  })
+
+  it('로그인하지 않았으면 서버의 UNAUTHORIZED를 그대로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(json({ error: { code: 'UNAUTHORIZED', message: '인증이 필요합니다' } }, 401)),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test' })
+
+    const error = await caught(client.listContents())
+
+    expect(error.code).toBe('UNAUTHORIZED')
+  })
+})

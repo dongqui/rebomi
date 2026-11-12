@@ -32,6 +32,9 @@ importers:
       '@rebomi/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
+      '@rebomi/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@rebomi/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -44,6 +47,9 @@ importers:
       jose:
         specifier: ^6.2.17
         version: 6.2.17
+      pg-boss:
+        specifier: ^12.38.1
+        version: 12.38.1(@opentelemetry/api@1.10.0)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
