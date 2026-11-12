@@ -27,6 +27,7 @@ function toContent(row: ContentRow): Content {
     id: row.id,
     url: row.url,
     title: row.title,
+    description: row.description,
     domain: row.domain,
     imageUrl: row.imageUrl,
     savedAt: row.savedAt.toISOString(),

@@ -83,8 +83,37 @@ describe('마이그레이션 적용', () => {
       await migrate(drizzle(pool), { migrationsFolder })
 
       expect(await tableNames(pool)).toEqual(
-        expect.arrayContaining(['users', 'contents', 'auth_identities', 'refresh_tokens']),
+        expect.arrayContaining([
+          'users',
+          'contents',
+          'auth_identities',
+          'refresh_tokens',
+          'content_bodies',
+        ]),
       )
+    })
+  }, 60_000)
+
+  it('인증까지 있는 기존 DB에 적용하면 기존 콘텐츠를 유지한 채 설명 컬럼과 본문 테이블이 생긴다', async () => {
+    await withScratchDatabase(async (pool) => {
+      await migrate(drizzle(pool), { migrationsFolder: migrationsUpTo('0003_auth') })
+      expect(await tableNames(pool)).not.toContain('content_bodies')
+      const user = await pool.query<{ id: string }>(
+        `insert into users (email) values ('existing@example.com') returning id`,
+      )
+      await pool.query(
+        `insert into contents (user_id, url, normalized_url, domain, source, resurfacing_included)
+         values ($1, 'https://example.com/a', 'https://example.com/a', 'example.com', 'web', true)`,
+        [user.rows[0]!.id],
+      )
+
+      await migrate(drizzle(pool), { migrationsFolder })
+
+      expect(await tableNames(pool)).toContain('content_bodies')
+      const contents = await pool.query<{ url: string; description: string | null }>(
+        'select url, description from contents',
+      )
+      expect(contents.rows).toEqual([{ url: 'https://example.com/a', description: null }])
     })
   }, 60_000)
 

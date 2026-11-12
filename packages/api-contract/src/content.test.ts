@@ -15,6 +15,7 @@ const content: Content = {
   id: '0b0e7c7e-7b1f-4d0a-9d55-0d6f2f1f6a11',
   url: 'https://example.com/a?utm_source=x',
   title: null,
+  description: null,
   domain: 'example.com',
   imageUrl: null,
   savedAt: '2026-11-11T03:00:00.000Z',

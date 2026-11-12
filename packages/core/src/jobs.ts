@@ -18,3 +18,16 @@ export type QueueName = (typeof QUEUES)[keyof typeof QUEUES]
 export type ContentProcessPayload = {
   contentId: string
 }
+
+/**
+ * `QUEUES.CONTENT_PROCESS` 잡의 재시도 정책. 잡을 넣을 때 함께 보낸다 — 큐 설정에 두면
+ * api와 worker 중 누가 먼저 큐를 만들었느냐에 따라 값이 달라진다.
+ *
+ * 첫 시도가 일시 오류로 실패하면 최대 3번 더 한다. 간격은 30초에서 시작해 두 배씩 는다.
+ * 다시 시도할지(일시 오류인지)는 worker가 판단한다.
+ */
+export const CONTENT_PROCESS_RETRY = {
+  retryLimit: 3,
+  retryDelay: 30,
+  retryBackoff: true,
+} as const

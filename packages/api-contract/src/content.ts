@@ -33,6 +33,8 @@ export const contentSchema = z.object({
   url: z.string(),
   /** 메타데이터 수집이 끝나기 전에는 null일 수 있다. */
   title: z.string().nullable(),
+  /** 페이지가 스스로 밝힌 설명(og:description 등). 요약이 아니다. 없으면 null. */
+  description: z.string().nullable(),
   domain: z.string(),
   imageUrl: z.string().nullable(),
   /** 저장일. ISO 8601 UTC. */
