@@ -11,19 +11,19 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
-| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`. 공통 에러 핸들러와 CORS 구현됨. 콘텐츠 라우트 없음 |
-| `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12 | **골격만.** `noop` 큐 하나와 1분 주기 스케줄. 실제 잡 없음 |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록(`POST /contents`·`GET /contents`). 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12 | **골격만.** `noop` 큐 하나와 1분 주기 스케줄. 실제 잡 없음 — api가 넣는 `content-process` 큐를 아직 소비하지 않는다 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **골격만.** 루트 페이지 하나가 `/health`를 호출해 표시. 라우팅·화면·인증 없음 |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
-| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·생성 요청·목록 응답 스키마(콘텐츠 라우트는 없음) |
-| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
-| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), 큐 이름(`QUEUES`)과 잡 페이로드 타입 |
+| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마 |
+| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
+| `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)과 잡 페이로드 타입 |
 | `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
-- **인증: 서버와 `api-client`만 구현됨(§3).** 로그인 화면과 각 클라이언트의 토큰 보관은 없다. `requireAuth`를 적용한 라우트는 아직 없다 — 콘텐츠 라우트가 생길 때 붙인다.
+- **인증: 서버와 `api-client`만 구현됨(§3).** 로그인 화면과 각 클라이언트의 토큰 보관은 없다. 콘텐츠 라우트는 `requireAuth`를 지난다.
 - **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`·`extension`·`mobile`에는 자동 테스트가 없다. E2E 없음.
 - **CI:** `.github/workflows/ci.yml`이 push·PR마다 Postgres 이미지 빌드 → migrate → lint → typecheck → test → build를 돌린다. 모바일 네이티브 빌드(EAS) 없음.
 - **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다. 예외는 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS`로, 비어 있어도 API는 뜨고 그 제공자의 로그인만 503이다.
@@ -49,7 +49,7 @@ mobile ────┘                                  │ └→ core
 | 책임 | 위치 | 상태 |
 | --- | --- | --- |
 | Google·Apple 신원 토큰 검증, 계정 생성·조회, 액세스·갱신 토큰 발급·갱신·폐기 | `apps/api` — `routes/auth.ts`, `auth/*`. 외부 인증 서비스를 쓰지 않고 직접 구현한다 | 구현됨 |
-| 요청의 사용자 식별 | `apps/api/src/auth.ts`의 `requireAuth`(`app.requireAuth`). 통과한 요청은 `request.userId`를 가진다 | 구현됨. 적용된 라우트는 아직 없음 |
+| 요청의 사용자 식별 | `apps/api/src/auth.ts`의 `requireAuth`(`app.requireAuth`). 통과한 요청은 `request.userId`를 가진다 | 구현됨. 콘텐츠 라우트에 적용 |
 | 토큰 보관·전달, 만료 시 자동 갱신 | 각 클라이언트가 `api-client`의 `tokenStore`(`get`/`set`)를 구현 (확장 `chrome.storage`, 모바일 `SecureStore`). 웹은 메모리 + 쿠키 | `api-client` 구현됨. 클라이언트별 저장소 없음 |
 | 공유 확장과 메인 앱의 세션 공유 | iOS App Group, Android 공유 저장소 **[원문]** | 없음 |
 | 기기 간 동기화 | 서버가 단일 원본. 클라이언트는 서버 상태를 조회한다 **[제안]** — 오프라인 편집·충돌 해결은 요구되지 않았다 | 없음 |
@@ -135,6 +135,9 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 - **저장은 동기, 처리는 비동기.** 저장 요청은 콘텐츠 행을 만들고 바로 응답한다. 요약·임베딩이 끝나지 않아도 목록과 키워드 검색에 나타나야 한다. **[원문 4.1, 4.3]**
 - **본문 추출 우선순위:** 클라이언트 캡처 → 공유 텍스트 → 서버 fetch → 메타데이터만. 클라이언트가 본문을 보냈으면 서버 fetch는 하지 않는다(보조). **[원문 4.1]**
 - **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름과 페이로드 타입은 한 곳(`packages/core`의 `QUEUES`, `ContentProcessPayload`)에 두고 api(보내는 쪽)와 worker(받는 쪽)가 같은 것을 쓴다. 저장된 콘텐츠의 서버 측 처리 큐는 `content-process`이고 페이로드는 `{ contentId }`다. 실패는 pg-boss 재시도에 맡긴다.
+- **저장 API (`POST /contents`, 구현됨):** `core.normalizeUrl`로 정규화하고 `(user_id, normalized_url)` 유일 제약으로 중복을 판정한다. 새로 저장하면 201, 이미 있으면 200이고 본문은 둘 다 `{ status: 'created' | 'duplicate', content }`다 — 중복은 오류가 아니며 기존 콘텐츠를 그대로 준다(두 번째 요청의 URL·출처로 덮어쓰지 않는다). http(s)가 아닌 입력은 400 `VALIDATION_FAILED`. `domain`은 호스트에서 앞의 `www.`만 뗀 값이다. 지금은 URL만 받는다 — 본문을 함께 받는 저장은 확장·모바일 Issue에서 더한다.
+- **행과 잡은 한 트랜잭션이다.** api는 콘텐츠 행 삽입과 `content-process` 잡 삽입을 같은 DB 트랜잭션에서 한다(`Db.transaction` + pg-boss `send`의 `db` 옵션). 잡을 넣지 못하면 행도 남지 않는다 — 행만 남으면 그 콘텐츠는 영원히 처리 중이고, 다시 저장해도 중복이라 고칠 길이 없다. api의 pg-boss는 보내기 전용이고(유지보수·스케줄 꺼짐) 소비는 worker가 한다.
+- **목록 API (`GET /contents`, 구현됨):** 요청한 사용자의 콘텐츠 중 휴지통을 뺀 것을 저장일 최근순으로 준다. `limit`(기본 50, 최대 100)과 `cursor`를 받고 `{ items, nextCursor }`를 준다. 커서는 `(saved_at, id)` 키셋이고 클라이언트에게는 불투명한 문자열이다 — 중간에 새 저장이 끼어도 건너뛰거나 겹치지 않는다. 상태별 필터와 오래된 순 정렬은 아직 없다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
 - **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**
 
