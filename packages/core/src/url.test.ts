@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUrl, InvalidUrlError } from './index.js'
+import { domainOf, normalizeUrl, InvalidUrlError } from './index.js'
 
 describe('normalizeUrl', () => {
   it('트래킹 파라미터를 제거한다', () => {
@@ -41,5 +41,27 @@ describe('normalizeUrl', () => {
     ]) {
       expect(() => normalizeUrl(bad)).toThrow(InvalidUrlError)
     }
+  })
+})
+
+describe('domainOf', () => {
+  it('호스트를 소문자로 돌려준다', () => {
+    expect(domainOf('https://Example.COM/a?b=1')).toBe('example.com')
+  })
+
+  it('앞의 www. 만 뗀다', () => {
+    expect(domainOf('https://www.reddit.com/r/x')).toBe('reddit.com')
+    expect(domainOf('https://old.reddit.com/r/x')).toBe('old.reddit.com')
+    expect(domainOf('https://m.youtube.com/watch?v=1')).toBe('m.youtube.com')
+    expect(domainOf('https://wwwexample.com')).toBe('wwwexample.com')
+  })
+
+  it('포트는 넣지 않는다', () => {
+    expect(domainOf('http://localhost:8080/a')).toBe('localhost')
+  })
+
+  it('http(s) URL이 아니면 InvalidUrlError를 던진다', () => {
+    expect(() => domainOf('ftp://a.com')).toThrow(InvalidUrlError)
+    expect(() => domainOf('not a url')).toThrow(InvalidUrlError)
   })
 })

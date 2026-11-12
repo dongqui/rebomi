@@ -61,7 +61,45 @@ export const createContentRequestSchema = z.object({
 
 export type CreateContentRequest = z.infer<typeof createContentRequestSchema>
 
-/** 콘텐츠 목록 응답. */
+/**
+ * 콘텐츠 저장 응답.
+ *
+ * 중복은 오류가 아니다 — 이미 저장한 URL이면 새로 만들지 않고 기존 콘텐츠를 돌려준다.
+ * HTTP 상태는 `created` 일 때 201, `duplicate` 일 때 200이다.
+ */
+export const createContentResponseSchema = z.object({
+  status: z.enum(['created', 'duplicate']),
+  /** `duplicate` 이면 이미 있던 콘텐츠다. */
+  content: contentSchema,
+})
+
+export type CreateContentResponse = z.infer<typeof createContentResponseSchema>
+
+/** 목록 한 페이지의 기본 크기와 상한. */
+export const CONTENT_LIST_DEFAULT_LIMIT = 50
+export const CONTENT_LIST_MAX_LIMIT = 100
+
+/**
+ * 콘텐츠 목록 요청의 쿼리. 쿼리 문자열로 오므로 `limit` 은 문자열도 받는다.
+ */
+export const listContentsQuerySchema = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(CONTENT_LIST_MAX_LIMIT)
+    .default(CONTENT_LIST_DEFAULT_LIMIT),
+  /** 이전 응답의 `nextCursor`. 없으면 첫 페이지. */
+  cursor: z.string().min(1).max(512).optional(),
+})
+
+/** 클라이언트가 넘기는 목록 조건. */
+export type ListContentsQuery = {
+  limit?: number
+  cursor?: string
+}
+
+/** 콘텐츠 목록 응답. 휴지통을 뺀 콘텐츠가 저장일 최근순으로 온다. */
 export const listContentsResponseSchema = z.object({
   items: z.array(contentSchema),
   /**
@@ -74,4 +112,5 @@ export const listContentsResponseSchema = z.object({
 export type ListContentsResponse = z.infer<typeof listContentsResponseSchema>
 
 export const contentJsonSchema = toResponseJsonSchema(contentSchema)
+export const createContentResponseJsonSchema = toResponseJsonSchema(createContentResponseSchema)
 export const listContentsResponseJsonSchema = toResponseJsonSchema(listContentsResponseSchema)

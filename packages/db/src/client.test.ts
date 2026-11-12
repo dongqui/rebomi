@@ -70,6 +70,60 @@ describe('users 테이블', () => {
   })
 })
 
+describe('transaction', () => {
+  it('커밋하면 drizzle과 executeSql로 쓴 것이 함께 남는다', async () => {
+    const db = createDb(connectionString!)
+    const first = `tx-${crypto.randomUUID()}@example.com`
+    const second = `tx-${crypto.randomUUID()}@example.com`
+
+    const returned = await db.transaction(async (tx) => {
+      await tx.drizzle.insert(schema.users).values({ email: first })
+      await tx.executeSql('insert into users (email) values ($1)', [second])
+      return 'done'
+    })
+
+    const rows = await db.drizzle.execute(
+      sql`select email from users where email in (${first}, ${second})`,
+    )
+    expect(returned).toBe('done')
+    expect(rows.rows).toHaveLength(2)
+
+    await db.drizzle.execute(sql`delete from users where email in (${first}, ${second})`)
+    await db.close()
+  })
+
+  it('중간에 던지면 둘 다 버리고 그 오류를 다시 던진다', async () => {
+    const db = createDb(connectionString!)
+    const first = `tx-${crypto.randomUUID()}@example.com`
+    const second = `tx-${crypto.randomUUID()}@example.com`
+
+    const attempt = db.transaction(async (tx) => {
+      await tx.drizzle.insert(schema.users).values({ email: first })
+      await tx.executeSql('insert into users (email) values ($1)', [second])
+      throw new Error('의도적 실패')
+    })
+
+    await expect(attempt).rejects.toThrow('의도적 실패')
+    const rows = await db.drizzle.execute(
+      sql`select email from users where email in (${first}, ${second})`,
+    )
+    expect(rows.rows).toEqual([])
+    await db.close()
+  })
+
+  it('트랜잭션이 끝나면 연결을 풀에 돌려준다', async () => {
+    // 돌려주지 않으면 풀(기본 10개)이 말라 이후 요청이 전부 매달린다.
+    const db = createDb(connectionString!)
+
+    for (let i = 0; i < 25; i += 1) {
+      await db.transaction(() => Promise.reject(new Error('x'))).catch(() => undefined)
+    }
+
+    await expect(ping(db)).resolves.toBeUndefined()
+    await db.close()
+  })
+})
+
 describe('타임아웃', () => {
   it('TCP는 받지만 응답하지 않는 서버에서 ping이 매달리지 않고 실패한다', async () => {
     // Postgres가 죽는 가장 흔한 형태는 거부가 아니라 무응답이다
