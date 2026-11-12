@@ -485,6 +485,7 @@ const CONTENT = {
   id: '5d3c1f0a-6c0e-4c57-9d0b-2f4c8b1a7e11',
   url: 'https://example.com/a',
   title: null,
+  description: null,
   domain: 'example.com',
   imageUrl: null,
   savedAt: '2026-11-12T03:00:00.000Z',

@@ -54,7 +54,8 @@ const oneOf = (column: AnyPgColumn, values: readonly string[]): SQL =>
 /**
  * 저장한 콘텐츠. 사용자당 정규화 URL 하나.
  *
- * 요약·임베딩·본문·메모·가져온 폴더 컬럼은 각 기능의 Issue에서 추가한다.
+ * 본문은 `content_bodies` 에 따로 둔다. 요약·임베딩·메모·가져온 폴더 컬럼은 각 기능의
+ * Issue에서 추가한다.
  */
 export const contents = pgTable(
   'contents',
@@ -68,6 +69,8 @@ export const contents = pgTable(
     /** `core.normalizeUrl` 의 결과. 중복 판정의 기준이다. */
     normalizedUrl: text('normalized_url').notNull(),
     title: text('title'),
+    /** 페이지가 스스로 밝힌 설명(og:description 등). 요약이 아니다. */
+    description: text('description'),
     domain: text('domain').notNull(),
     imageUrl: text('image_url'),
     source: text('source', { enum: CONTENT_SOURCES }).notNull(),
@@ -95,6 +98,20 @@ export const contents = pgTable(
     check('contents_metadata_status_check', oneOf(table.metadataStatus, METADATA_STATUSES)),
   ],
 )
+
+/**
+ * 콘텐츠에서 추출한 본문 텍스트. 콘텐츠당 하나.
+ *
+ * `contents` 와 가른 이유는 크기다 — 목록 질의가 수만 자짜리 본문을 함께 읽지 않게 한다.
+ * 원본 HTML은 저장하지 않는다. 추출한 텍스트만 둔다 (architecture.md §8).
+ */
+export const contentBodies = pgTable('content_bodies', {
+  contentId: uuid('content_id')
+    .primaryKey()
+    .references(() => contents.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
+  extractedAt: timestamp('extracted_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 /**
  * 제공자 신원. 한 계정에 Google·Apple 신원이 각각 붙을 수 있다 — 검증된 이메일이

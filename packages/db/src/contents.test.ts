@@ -60,6 +60,7 @@ describe('contents 테이블', () => {
       url: 'https://example.com/a?utm_source=x',
       normalizedUrl: 'https://example.com/a',
       title: null,
+      description: null,
       domain: 'example.com',
       imageUrl: null,
       source: 'web',
@@ -169,5 +170,55 @@ describe('contents 테이블', () => {
       .from(schema.contents)
       .where(eq(schema.contents.userId, userId))
     expect(rows).toEqual([])
+  })
+})
+
+describe('content_bodies 테이블', () => {
+  it('콘텐츠 하나에 본문 하나를 둔다', async () => {
+    const userId = await createUser()
+    const [content] = await db.drizzle
+      .insert(schema.contents)
+      .values(contentValues(userId, 'https://example.com/body-1'))
+      .returning()
+
+    const [body] = await db.drizzle
+      .insert(schema.contentBodies)
+      .values({ contentId: content!.id, text: '본문' })
+      .returning()
+
+    expect(body).toMatchObject({ contentId: content!.id, text: '본문' })
+    expect(body?.extractedAt).toBeInstanceOf(Date)
+    expect(
+      await pgCode(
+        db.drizzle.insert(schema.contentBodies).values({ contentId: content!.id, text: '둘째' }),
+      ),
+    ).toBe('23505')
+  })
+
+  it('콘텐츠를 지우면 본문도 지워진다', async () => {
+    const userId = await createUser()
+    const [content] = await db.drizzle
+      .insert(schema.contents)
+      .values(contentValues(userId, 'https://example.com/body-2'))
+      .returning()
+    await db.drizzle.insert(schema.contentBodies).values({ contentId: content!.id, text: '본문' })
+
+    await db.drizzle.delete(schema.contents).where(eq(schema.contents.id, content!.id))
+
+    const rows = await db.drizzle
+      .select()
+      .from(schema.contentBodies)
+      .where(eq(schema.contentBodies.contentId, content!.id))
+    expect(rows).toEqual([])
+  })
+
+  it('없는 콘텐츠의 본문은 넣을 수 없다', async () => {
+    expect(
+      await pgCode(
+        db.drizzle
+          .insert(schema.contentBodies)
+          .values({ contentId: crypto.randomUUID(), text: '본문' }),
+      ),
+    ).toBe('23503')
   })
 })

@@ -155,6 +155,7 @@ describe('POST /contents', () => {
       url: 'https://www.Example.com/article?id=7',
       domain: 'example.com',
       title: null,
+      description: null,
       imageUrl: null,
       source: 'web',
       archiveState: 'inbox',
@@ -313,6 +314,7 @@ describe('POST /contents', () => {
     expect(Object.keys(raw).sort()).toEqual(['content', 'status'])
     expect(Object.keys(raw.content).sort()).toEqual([
       'archiveState',
+      'description',
       'domain',
       'extractionLevel',
       'id',
