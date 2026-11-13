@@ -3,6 +3,7 @@
 import { ApiError } from '@rebomi/api-client'
 import type { HealthResponse } from '@rebomi/api-contract'
 import { useEffect, useState } from 'react'
+import { SignOutButton } from '@/auth/sign-out-button'
 import { api, apiBaseUrl } from '@/lib/api'
 
 type State =
@@ -44,7 +45,10 @@ export default function Home() {
 
   return (
     <main style={{ maxWidth: '40rem', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>Rebomi</h1>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>Rebomi</h1>
+        <SignOutButton />
+      </header>
       <p style={{ color: '#666', marginTop: 0, fontSize: '0.875rem' }}>
         API: <code>{apiBaseUrl}</code>
       </p>
