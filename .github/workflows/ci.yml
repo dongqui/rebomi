@@ -14,6 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # 웹은 이 값들이 없으면 기동·빌드하지 않는다. `.env.example` 에는 이름만 있으므로
+    # 빌드가 되도록 자리만 채운다. 실제 클라이언트 ID가 아니며 비밀값도 아니다.
+    env:
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-placeholder
+      NEXT_PUBLIC_APPLE_CLIENT_ID: ci-placeholder
+
     steps:
       - uses: actions/checkout@v4
 

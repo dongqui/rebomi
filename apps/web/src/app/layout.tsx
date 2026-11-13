@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
+import { Providers } from './providers'
 
 export const metadata: Metadata = {
   title: 'Rebomi',
@@ -18,7 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           lineHeight: 1.6,
         }}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

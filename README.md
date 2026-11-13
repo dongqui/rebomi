@@ -83,6 +83,12 @@ pnpm dev:mobile
 않으면 API가 기동하지 않는다. `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS` 는 비워 둬도
 API는 뜨고, 그 제공자의 로그인만 503을 돌려준다.
 
+웹은 `NEXT_PUBLIC_GOOGLE_CLIENT_ID`·`NEXT_PUBLIC_APPLE_CLIENT_ID` 가 없으면 기동하지
+않는다. 서버의 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS` 에도 같은 값이 있어야 로그인이
+된다. Google은 OAuth 웹 클라이언트의 "승인된 JavaScript 원본"에 `http://localhost:3000`
+을 넣으면 로컬에서 로그인된다. Apple은 `localhost` 를 받지 않아 HTTPS 도메인과
+Return URL(`<오리진>/login`) 등록이 필요하다.
+
 ## Chrome 확장 로드
 
 ```bash
