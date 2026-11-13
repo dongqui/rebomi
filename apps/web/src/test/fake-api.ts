@@ -4,6 +4,8 @@ import { createTokenStore, type ObservableTokenStore } from '@/auth/token-store'
 
 export type FakeRequest = {
   path: string
+  /** 쿼리 문자열. 없으면 빈 문자열, 있으면 `?` 로 시작한다. */
+  search: string
   method: string
   body: unknown
   credentials: RequestCredentials | undefined
@@ -31,6 +33,7 @@ export function fakeApi(handler: (request: FakeRequest) => FakeResponse): {
   vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => {
     const request: FakeRequest = {
       path: new URL(input).pathname,
+      search: new URL(input).search,
       method: init.method ?? 'GET',
       body: typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
       credentials: init.credentials,

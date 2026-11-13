@@ -571,6 +571,40 @@ describe('saveContent()', () => {
   })
 })
 
+describe('getContent()', () => {
+  it('ID로 콘텐츠 하나를 받는다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json(CONTENT)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client.getContent(CONTENT.id)
+
+    expect(result).toEqual(CONTENT)
+    expect(spy.mock.calls[0]?.[0]).toBe(`http://api.test/contents/${CONTENT.id}`)
+    expect(bearerOf(spy.mock.calls[0]?.[1])).toBe('Bearer t0ken')
+  })
+
+  it('ID를 경로에 넣을 때 인코딩한다', async () => {
+    const spy = stubFetch(() =>
+      Promise.resolve(json({ error: { code: 'NOT_FOUND', message: '없음' } }, 404)),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    await caught(client.getContent('a/b?c'))
+
+    expect(spy.mock.calls[0]?.[0]).toBe('http://api.test/contents/a%2Fb%3Fc')
+  })
+
+  it('없는 콘텐츠(404)는 NOT_FOUND 코드의 ApiError로 던진다', async () => {
+    stubFetch(() => Promise.resolve(json({ error: { code: 'NOT_FOUND', message: '없음' } }, 404)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client.getContent(CONTENT.id))
+
+    expect(error.code).toBe('NOT_FOUND')
+    expect(error.status).toBe(404)
+  })
+})
+
 describe('listContents()', () => {
   it('조건 없이 부르면 쿼리 없이 요청하고 목록을 돌려준다', async () => {
     const spy = stubFetch(() => Promise.resolve(json({ items: [CONTENT], nextCursor: 'next' })))

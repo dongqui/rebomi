@@ -11,13 +11,13 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
-| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록(`POST /contents`·`GET /contents`). 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
-| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/`는 아직 `/health` 결과만 표시한다. 저장·목록 화면 없음 |
+| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/`는 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음 |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마 |
-| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
+| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
 | `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)·잡 페이로드 타입·재시도 정책(`CONTENT_PROCESS_RETRY`) |
 | `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`·`content_bodies`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
@@ -154,6 +154,8 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
   - **재시도:** 연결 실패·시간 초과·5xx·429 같은 일시 오류만 최대 3번(30초부터 두 배씩) 다시 한다. 그 밖의 4xx, HTML이 아닌 응답, 5MB 초과, 리다이렉트 5번 초과, 차단된 주소는 바로 실패로 기록한다. 마지막 시도까지 실패하면 실패로 기록하고 잡은 끝낸다 — 워커는 계속 돈다.
   - **나가는 요청의 제한:** 주소는 사용자 입력이라 믿지 않는다. 사설·루프백·링크 로컬 주소로는 연결하지 않고(연결 직전의 DNS 결과로 판정), 리다이렉트는 직접 따라가며 매번 다시 검사한다. 요청 전체 10초, 응답 5MB(압축을 푼 크기). User-Agent는 `Mozilla/5.0 (compatible; RebomiBot/0.1)`로 봇임을 밝힌다. robots.txt는 확인하지 않는다 — 사용자가 저장한 주소 하나만 가져온다. 로그에는 콘텐츠 ID와 실패 사유만 남기고 주소는 남기지 않는다.
 - **목록 API (`GET /contents`, 구현됨):** 요청한 사용자의 콘텐츠 중 휴지통을 뺀 것을 저장일 최근순으로 준다. `limit`(기본 50, 최대 100)과 `cursor`를 받고 `{ items, nextCursor }`를 준다. 커서는 `(saved_at, id)` 키셋이고 클라이언트에게는 불투명한 문자열이다 — 중간에 새 저장이 끼어도 건너뛰거나 겹치지 않는다. 상태별 필터와 오래된 순 정렬은 아직 없다.
+- **단건 조회 API (`GET /contents/:id`, 구현됨):** 요청한 사용자의 콘텐츠 하나를 목록과 같은 모양으로 준다. 없는 ID, 남의 콘텐츠, 휴지통의 콘텐츠, UUID 모양이 아닌 ID는 구분하지 않고 404 `NOT_FOUND`다 — 구분하면 ID가 존재하는지 알려 주게 된다. 클라이언트가 처리 상태를 다시 확인하는 데 쓴다.
+- **웹의 처리 상태 갱신 (`apps/web/src/library/`):** 저장은 즉시 응답하고 처리는 워커가 나중에 하므로, 웹은 처리 중(`metadataStatus: pending`)인 항목만 3초마다 단건 조회로 다시 확인한다. 처리 중인 항목이 없거나 탭이 숨겨져 있으면 묻지 않는다. 확인에 실패하면 항목을 그대로 두고 다음 차례에 다시 묻고, 404면 목록에서 뺀다. 서버가 변경을 밀어 주는 방식(SSE·웹소켓)은 쓰지 않는다. 목록은 첫 페이지 50개와 "더 보기"다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
 - **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**
 
