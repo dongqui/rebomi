@@ -1,5 +1,6 @@
 import {
   ERROR_CODES,
+  contentJsonSchema,
   createContentRequestSchema,
   createContentResponseJsonSchema,
   listContentsQuerySchema,
@@ -207,6 +208,43 @@ export function registerContentRoutes(app: FastifyInstance, deps: ContentRouteDe
           hasMore && last ? encodeCursor({ savedAt: last.savedAtText, id: last.row.id }) : null,
       }
       return reply.status(200).send(response)
+    },
+  )
+
+  /**
+   * `GET /contents/:id` — 요청한 사용자의 콘텐츠 하나를 준다.
+   *
+   * 클라이언트가 처리 중인 콘텐츠의 상태를 다시 확인하는 데 쓴다. 남의 콘텐츠와 없는
+   * 콘텐츠를 구분하지 않고 404로 답한다 — 구분하면 ID가 존재하는지 알려 주게 된다.
+   * 휴지통은 목록과 같게 없는 것으로 본다.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/contents/:id',
+    {
+      preHandler: app.requireAuth,
+      schema: { response: { 200: contentJsonSchema } as Record<number, unknown> },
+    },
+    async (request, reply) => {
+      const notFound = () =>
+        reply.status(404).send(errorBody(ERROR_CODES.NOT_FOUND, '콘텐츠를 찾을 수 없습니다'))
+
+      const { id } = request.params
+      // uuid 컬럼에 다른 모양을 넣으면 DB가 오류를 낸다.
+      if (!UUID.test(id)) return notFound()
+
+      const [row] = await db.drizzle
+        .select()
+        .from(contents)
+        .where(
+          and(
+            eq(contents.id, id),
+            eq(contents.userId, request.userId),
+            ne(contents.archiveState, 'trashed'),
+          ),
+        )
+      if (!row) return notFound()
+
+      return reply.status(200).send(toContent(row))
     },
   )
 }
