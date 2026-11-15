@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  contentSchema,
   createContentResponseSchema,
   listContentsResponseSchema,
   type Content,
@@ -82,6 +83,13 @@ const list = (app: FastifyInstance, token: string | null, query = '') =>
   app.inject({
     method: 'GET',
     url: `/contents${query}`,
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  })
+
+const getOne = (app: FastifyInstance, token: string | null, id: string) =>
+  app.inject({
+    method: 'GET',
+    url: `/contents/${id}`,
     headers: token ? { authorization: `Bearer ${token}` } : {},
   })
 
@@ -542,6 +550,99 @@ describe('GET /contents', () => {
     expect(Object.keys(raw).sort()).toEqual(['items', 'nextCursor'])
     expect(raw.items[0]).not.toHaveProperty('normalizedUrl')
     expect(raw.items[0]).not.toHaveProperty('userId')
+    expect(response.body).not.toContain(user.id)
+  })
+})
+
+describe('GET /contents/:id', () => {
+  it('내 콘텐츠 하나를 준다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const saved = await saveOk(app, user.token, 'https://example.com/one')
+
+    const response = await getOne(app, user.token, saved.content.id)
+
+    expect(response.statusCode).toBe(200)
+    expect(contentSchema.parse(response.json())).toEqual(saved.content)
+  })
+
+  it('처리가 끝난 뒤에는 바뀐 제목과 처리 상태를 준다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'processed')
+    await db.drizzle
+      .update(schema.contents)
+      .set({ title: '처리된 제목', metadataStatus: 'done' })
+      .where(eq(schema.contents.id, id))
+
+    const body = contentSchema.parse((await getOne(app, user.token, id)).json())
+
+    expect(body.title).toBe('처리된 제목')
+    expect(body.metadataStatus).toBe('done')
+  })
+
+  it('다른 사용자의 콘텐츠는 404 NOT_FOUND다', async () => {
+    const app = newApp()
+    const owner = await newUser()
+    const other = await newUser()
+    const id = await insertContent(owner.id, 'private')
+
+    const response = await getOne(app, other.token, id)
+
+    expect(response.statusCode).toBe(404)
+    expect(errorCode(response)).toBe('NOT_FOUND')
+  })
+
+  it('없는 ID는 404 NOT_FOUND다', async () => {
+    const app = newApp()
+    const user = await newUser()
+
+    const response = await getOne(app, user.token, randomUUID())
+
+    expect(response.statusCode).toBe(404)
+    expect(errorCode(response)).toBe('NOT_FOUND')
+  })
+
+  it('UUID 모양이 아닌 ID는 404 NOT_FOUND다', async () => {
+    const app = newApp()
+    const user = await newUser()
+
+    const response = await getOne(app, user.token, 'not-a-uuid')
+
+    expect(response.statusCode).toBe(404)
+    expect(errorCode(response)).toBe('NOT_FOUND')
+  })
+
+  it('휴지통의 콘텐츠는 목록과 같게 404 NOT_FOUND다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'trashed-one', { archiveState: 'trashed' })
+
+    const response = await getOne(app, user.token, id)
+
+    expect(response.statusCode).toBe(404)
+    expect(errorCode(response)).toBe('NOT_FOUND')
+  })
+
+  it('인증 없는 요청은 401 UNAUTHORIZED다', async () => {
+    const app = newApp()
+
+    const response = await getOne(app, null, randomUUID())
+
+    expect(response.statusCode).toBe(401)
+    expect(errorCode(response)).toBe('UNAUTHORIZED')
+  })
+
+  it('응답에 계약에 없는 필드가 없다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const saved = await saveOk(app, user.token, 'https://example.com/raw-one')
+
+    const response = await getOne(app, user.token, saved.content.id)
+    const raw = JSON.parse(response.body) as Record<string, unknown>
+
+    expect(raw).not.toHaveProperty('normalizedUrl')
+    expect(raw).not.toHaveProperty('userId')
     expect(response.body).not.toContain(user.id)
   })
 })

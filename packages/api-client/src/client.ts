@@ -2,6 +2,7 @@ import {
   ERROR_CODES,
   HEALTH_ACCEPTED_STATUSES,
   apiErrorBodySchema,
+  contentSchema,
   createContentResponseSchema,
   healthResponseSchema,
   listContentsResponseSchema,
@@ -9,6 +10,7 @@ import {
   refreshResponseSchema,
   type AuthProvider,
   type AuthUser,
+  type Content,
   type CreateContentRequest,
   type CreateContentResponse,
   type HealthResponse,
@@ -86,6 +88,12 @@ export type ApiClient = {
    * `cursor` 로 넘긴다. `nextCursor` 가 null이면 끝이다.
    */
   listContents(query?: ListContentsQuery): Promise<ListContentsResponse>
+  /**
+   * 내 콘텐츠 하나를 받는다. 처리 상태가 바뀌었는지 다시 확인할 때 쓴다.
+   *
+   * 없거나 내 것이 아니거나 휴지통에 있으면 `NOT_FOUND` 코드의 `ApiError` 를 던진다.
+   */
+  getContent(id: string): Promise<Content>
 }
 
 type RequestInitLike = {
@@ -327,6 +335,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
         authenticated: true,
       })
     },
+    getContent: (id) =>
+      request(`/contents/${encodeURIComponent(id)}`, contentSchema, { authenticated: true }),
   }
 }
 
