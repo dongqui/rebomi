@@ -65,7 +65,7 @@ pnpm dev:mobile
 | `pnpm dev:mobile` | Expo 개발 서버 |
 | `pnpm lint` | 전 패키지 ESLint |
 | `pnpm typecheck` | 전 패키지 타입체크 |
-| `pnpm test` | 전 패키지 테스트 (DB 테스트는 실제 Postgres를 쓴다) |
+| `pnpm test` | 전 패키지 테스트 (DB 테스트는 실제 Postgres를 쓴다). `apps/e2e`는 api와 worker를 함께 띄워 저장부터 처리 완료까지의 연결을 본다 |
 | `pnpm build` | 전 패키지 빌드 |
 | `pnpm db:migrate` | 마이그레이션 적용 |
 | `pnpm db:generate` | 스키마 변경으로부터 마이그레이션 생성 |
