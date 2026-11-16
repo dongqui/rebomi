@@ -15,9 +15,21 @@ import type { FastifyInstance } from 'fastify'
 import { errorBody } from '../errors.js'
 import type { JobQueue } from '../jobs.js'
 
-const { contents } = schema
+const { contents, contentBodies } = schema
 
 type ContentRow = typeof contents.$inferSelect
+
+/**
+ * 저장 요청의 크기 제한. 본문 상한(20만 자)은 UTF-8로 최대 600KB이고 JSON으로 싣는 동안
+ * 더 커질 수 있어 Fastify 기본값(1MB)으로는 상한 안의 본문이 거부될 수 있다.
+ */
+const SAVE_BODY_LIMIT_BYTES = 2 * 1024 * 1024
+
+/** 앞뒤 공백을 뗀다. 남는 것이 없으면 null. */
+function textOrNull(value: string | undefined): string | null {
+  const text = value?.trim() ?? ''
+  return text === '' ? null : text
+}
 
 /**
  * DB 행을 계약의 콘텐츠로 옮긴다. `normalizedUrl`·`userId` 같은 내부 값은 싣지 않는다.
@@ -85,15 +97,19 @@ export function registerContentRoutes(app: FastifyInstance, deps: ContentRouteDe
   const { db, jobs } = deps
 
   /**
-   * `POST /contents` — URL을 저장한다 (capture.md CAP-1, CAP-6).
+   * `POST /contents` — URL을 저장한다 (capture.md CAP-1, CAP-2, CAP-6).
    *
    * 행을 만들고 처리 잡을 큐에 넣으면 바로 응답한다. 메타데이터 수집과 요약은 워커가
    * 나중에 한다. 이미 저장한 URL이면 새로 만들지 않고 기존 콘텐츠를 `duplicate` 로 준다.
+   *
+   * 저장하는 쪽이 제목·설명·본문·대표 이미지를 함께 보내면 그 값을 넣는다. 본문은
+   * `content_bodies` 에 저장하고 응답에는 싣지 않는다.
    */
   app.post(
     '/contents',
     {
       preHandler: app.requireAuth,
+      bodyLimit: SAVE_BODY_LIMIT_BYTES,
       schema: {
         // 상태 코드를 넓은 타입으로 둔다 — 좁으면 Fastify가 에러 응답의 상태를 막는다.
         response: {
@@ -121,6 +137,13 @@ export function registerContentRoutes(app: FastifyInstance, deps: ContentRouteDe
       }
 
       const userId = request.userId
+      // 저장하는 쪽이 함께 보낸 값. 공백뿐이면 보내지 않은 것과 같다.
+      const sent = {
+        title: textOrNull(body.title),
+        description: textOrNull(body.description),
+        imageUrl: body.imageUrl ?? null,
+        body: textOrNull(body.body),
+      }
 
       const created = await db.transaction(async (tx) => {
         // 중복 판정은 DB의 유일 제약에 맡긴다. 먼저 조회하고 넣으면 동시에 온 두 요청이
@@ -133,6 +156,11 @@ export function registerContentRoutes(app: FastifyInstance, deps: ContentRouteDe
             normalizedUrl,
             domain,
             source: body.source,
+            title: sent.title,
+            description: sent.description,
+            imageUrl: sent.imageUrl,
+            // 추출 수준은 본문을 얼마나 확보했는지다 (architecture.md §4).
+            extractionLevel: sent.body === null ? 'metadata_only' : 'full',
             // 직접 저장한 콘텐츠는 재노출 대상이다 (resurfacing.md §5).
             resurfacingIncluded: true,
           })
@@ -140,6 +168,10 @@ export function registerContentRoutes(app: FastifyInstance, deps: ContentRouteDe
           .returning()
         if (!row) return null
 
+        if (sent.body !== null) {
+          await tx.drizzle.insert(contentBodies).values({ contentId: row.id, text: sent.body })
+        }
+        // 본문이 있어도 잡은 넣는다. 가져올지 말지는 워커가 정한다.
         await jobs.enqueueContentProcess(tx, { contentId: row.id })
         return row
       })
@@ -149,10 +181,37 @@ export function registerContentRoutes(app: FastifyInstance, deps: ContentRouteDe
         return reply.status(201).send(response)
       }
 
-      const [existing] = await db.drizzle
-        .select()
-        .from(contents)
-        .where(and(eq(contents.userId, userId), eq(contents.normalizedUrl, normalizedUrl)))
+      const mine = and(eq(contents.userId, userId), eq(contents.normalizedUrl, normalizedUrl))
+
+      // 이미 저장한 URL에 본문이 왔고 기존에 본문이 없으면 그 본문을 받는다. 본문이 이미
+      // 있으면 아무것도 바꾸지 않는다. 저장일은 어느 쪽이든 그대로다 (product.md D-15).
+      const sentBody = sent.body
+      if (sentBody !== null) {
+        await db.transaction(async (tx) => {
+          // 조건을 UPDATE에 둔다 — 먼저 읽고 판단하면 그 사이 워커가 본문을 넣을 수 있다.
+          const [upgraded] = await tx.drizzle
+            .update(contents)
+            .set({
+              extractionLevel: 'full',
+              // 제목·설명·이미지는 비어 있는 것만 채운다.
+              title: sql`coalesce(${contents.title}, ${sent.title})`,
+              description: sql`coalesce(${contents.description}, ${sent.description})`,
+              imageUrl: sql`coalesce(${contents.imageUrl}, ${sent.imageUrl})`,
+              // "본문 없음"이던 요약 상태는 본문이 생겼으니 다시 대기로 돌린다.
+              summaryStatus: sql`case when ${contents.summaryStatus} = 'no_content' then 'pending' else ${contents.summaryStatus} end`,
+            })
+            .where(and(mine, eq(contents.extractionLevel, 'metadata_only')))
+            .returning({ id: contents.id })
+          if (!upgraded) return
+
+          await tx.drizzle
+            .insert(contentBodies)
+            .values({ contentId: upgraded.id, text: sentBody })
+            .onConflictDoNothing({ target: contentBodies.contentId })
+        })
+      }
+
+      const [existing] = await db.drizzle.select().from(contents).where(mine)
       if (!existing) throw new Error('중복으로 판정된 콘텐츠를 찾을 수 없습니다')
 
       const response: CreateContentResponse = { status: 'duplicate', content: toContent(existing) }

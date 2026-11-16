@@ -80,6 +80,9 @@ export type ApiClient = {
    * URL을 저장한다. 새로 저장했으면 `status: 'created'`, 이미 저장한 URL이면
    * `status: 'duplicate'` 와 기존 콘텐츠를 돌려준다 — 중복은 오류가 아니다.
    *
+   * 페이지를 직접 볼 수 있는 클라이언트는 제목·설명·본문·대표 이미지를 함께 보낸다.
+   * 상한(`CONTENT_SAVE_LIMITS`)을 넘으면 서버가 자르지 않고 거부하므로 잘라서 보낸다.
+   *
    * http(s) 주소가 아니면 `VALIDATION_FAILED` 코드의 `ApiError` 를 던진다.
    */
   saveContent(request: CreateContentRequest): Promise<CreateContentResponse>

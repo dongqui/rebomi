@@ -511,6 +511,23 @@ describe('saveContent()', () => {
     expect(bearerOf(spy.mock.calls[0]?.[1])).toBe('Bearer t0ken')
   })
 
+  it('함께 보내는 제목·설명·본문·대표 이미지를 요청에 그대로 싣는다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json({ status: 'created', content: CONTENT }, 201)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+    const request = {
+      url: 'https://example.com/a',
+      source: 'extension',
+      title: '다시 만나는 글',
+      description: '페이지가 밝힌 설명',
+      body: '본문 텍스트',
+      imageUrl: 'https://example.com/cover.png',
+    } as const
+
+    await client.saveContent(request)
+
+    expect(bodyOf(spy.mock.calls[0]?.[1])).toEqual(request)
+  })
+
   it('이미 저장한 URL이면(200) 던지지 않고 status duplicate와 기존 콘텐츠를 돌려준다', async () => {
     stubFetch(() => Promise.resolve(json({ status: 'duplicate', content: CONTENT }, 200)))
     const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  CONTENT_SAVE_LIMITS,
   contentSchema,
   createContentResponseSchema,
   listContentsResponseSchema,
@@ -113,6 +114,25 @@ async function contentCount(userId: string): Promise<number> {
   const rows = await db.drizzle
     .select({ id: schema.contents.id })
     .from(schema.contents)
+    .where(eq(schema.contents.userId, userId))
+  return rows.length
+}
+
+/** 그 콘텐츠의 저장된 본문. 없으면 null. */
+async function bodyOf(contentId: string): Promise<string | null> {
+  const [row] = await db.drizzle
+    .select({ text: schema.contentBodies.text })
+    .from(schema.contentBodies)
+    .where(eq(schema.contentBodies.contentId, contentId))
+  return row?.text ?? null
+}
+
+/** 그 사용자의 콘텐츠에 딸린 본문 행의 수. */
+async function bodyCount(userId: string): Promise<number> {
+  const rows = await db.drizzle
+    .select({ id: schema.contentBodies.contentId })
+    .from(schema.contentBodies)
+    .innerJoin(schema.contents, eq(schema.contents.id, schema.contentBodies.contentId))
     .where(eq(schema.contents.userId, userId))
   return rows.length
 }
@@ -323,6 +343,305 @@ describe('POST /contents', () => {
     expect(response.statusCode).toBe(500)
     expect(errorCode(response)).toBe('INTERNAL')
     expect(await contentCount(user.id)).toBe(0)
+  })
+
+  describe('본문을 함께 받는 저장 (CAP-2)', () => {
+    const BODY = '저장하는 순간과 필요한 순간이 다르다. 그래서 다시 보여 주는 장치가 필요하다.'
+
+    it('본문과 함께 저장하면 추출 수준이 full이고 DB에 본문이 남는다', async () => {
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/with-body',
+        source: 'extension',
+        body: BODY,
+      })
+
+      expect(response.statusCode).toBe(201)
+      const { status, content } = createContentResponseSchema.parse(response.json())
+      expect(status).toBe('created')
+      expect(content.extractionLevel).toBe('full')
+      expect(await bodyOf(content.id)).toBe(BODY)
+    })
+
+    it('함께 보낸 제목·설명·대표 이미지가 응답과 목록에 나타난다', async () => {
+      const app = newApp()
+      const user = await newUser()
+      const sent = {
+        title: '다시 만나는 글',
+        description: '페이지가 밝힌 설명',
+        imageUrl: 'https://example.com/cover.png',
+      }
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/with-meta',
+        source: 'extension',
+        ...sent,
+      })
+
+      expect(createContentResponseSchema.parse(response.json()).content).toMatchObject(sent)
+      expect((await listOk(app, user.token)).items[0]).toMatchObject(sent)
+    })
+
+    it('본문 없이 제목만 보내면 추출 수준은 metadata_only이고 본문 행이 없다', async () => {
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/title-only',
+        source: 'extension',
+        title: '제목만',
+      })
+
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content.title).toBe('제목만')
+      expect(content.extractionLevel).toBe('metadata_only')
+      expect(await bodyOf(content.id)).toBeNull()
+    })
+
+    it('공백뿐인 본문·제목·설명은 없는 것으로 본다', async () => {
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/blank',
+        source: 'extension',
+        title: '  ',
+        description: '\n\t',
+        body: ' \n\t ',
+      })
+
+      expect(response.statusCode).toBe(201)
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content).toMatchObject({
+        title: null,
+        description: null,
+        extractionLevel: 'metadata_only',
+      })
+      expect(await bodyOf(content.id)).toBeNull()
+    })
+
+    it('앞뒤 공백을 떼고 저장한다', async () => {
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/trim',
+        source: 'extension',
+        title: '  제목  ',
+        body: `\n\n${BODY}\n`,
+      })
+
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content.title).toBe('제목')
+      expect(await bodyOf(content.id)).toBe(BODY)
+    })
+
+    it('본문이 있어도 처리 잡을 넣고 처리 상태는 pending으로 시작한다', async () => {
+      // 본문이 있는 콘텐츠를 가져올지 말지는 워커가 정한다 (#19).
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/body-job',
+        source: 'extension',
+        body: BODY,
+      })
+
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content.metadataStatus).toBe('pending')
+      expect(await queuedJobsFor(content.id)).toEqual([{ state: 'created' }])
+    })
+
+    it('본문은 응답에 실리지 않는다', async () => {
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/body-hidden',
+        source: 'extension',
+        body: BODY,
+      })
+
+      expect(response.statusCode).toBe(201)
+      expect(response.body).not.toContain(BODY)
+      expect((await list(app, user.token)).body).not.toContain(BODY)
+    })
+
+    it('상한 길이의 본문은 JSON으로 부풀어 1MB를 넘어도 받는다', async () => {
+      // 제어 문자는 JSON에서 6바이트(\u0001)가 된다. 기본 요청 크기 제한(1MB)에 걸리면
+      // 상한 안의 본문이 계약과 무관한 이유로 거부된다.
+      const app = newApp()
+      const user = await newUser()
+      const body = `가${'\u0001'.repeat(CONTENT_SAVE_LIMITS.body - 2)}나`
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/inflated',
+        source: 'extension',
+        body,
+      })
+
+      expect(response.statusCode).toBe(201)
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect((await bodyOf(content.id))?.length).toBe(CONTENT_SAVE_LIMITS.body)
+    })
+
+    it.each([
+      ['body', '가'.repeat(CONTENT_SAVE_LIMITS.body + 1)],
+      ['title', '가'.repeat(CONTENT_SAVE_LIMITS.title + 1)],
+      ['description', '가'.repeat(CONTENT_SAVE_LIMITS.description + 1)],
+      ['imageUrl', `https://example.com/${'a'.repeat(CONTENT_SAVE_LIMITS.imageUrl)}`],
+      ['imageUrl', '/cover.png'],
+      ['imageUrl', 'data:image/png;base64,AAAA'],
+      ['body', 123],
+      ['title', null],
+    ])(
+      '%s 가 상한을 넘거나 모양이 틀리면 400 VALIDATION_FAILED이고 저장되지 않는다',
+      async (field, value) => {
+        const app = newApp()
+        const user = await newUser()
+
+        const response = await save(app, user.token, {
+          url: 'https://example.com/rejected',
+          source: 'extension',
+          [field]: value,
+        })
+
+        expect(response.statusCode).toBe(400)
+        expect(errorCode(response)).toBe('VALIDATION_FAILED')
+        expect(await contentCount(user.id)).toBe(0)
+      },
+    )
+
+    it('큐에 넣지 못하면 본문도 남지 않는다', async () => {
+      const app = newApp({
+        enqueueContentProcess: () => Promise.reject(new Error('queue down')),
+      })
+      const user = await newUser()
+
+      const response = await save(app, user.token, {
+        url: 'https://example.com/body-rollback',
+        source: 'extension',
+        body: BODY,
+      })
+
+      expect(response.statusCode).toBe(500)
+      expect(await contentCount(user.id)).toBe(0)
+      expect(await bodyCount(user.id)).toBe(0)
+    })
+  })
+
+  describe('이미 저장한 URL을 본문과 함께 다시 저장', () => {
+    const BODY = '확장이 페이지에서 직접 읽은 본문이다.'
+    const again = (app: FastifyInstance, token: string, path: string, extra: object) =>
+      save(app, token, { url: `https://example.com/${path}`, source: 'extension', ...extra })
+
+    it('기존이 metadata_only이면 본문을 넣고 full로 올린다 — 응답은 duplicate다', async () => {
+      const app = newApp()
+      const user = await newUser()
+      const first = await saveOk(app, user.token, 'https://example.com/upgrade')
+
+      const response = await again(app, user.token, 'upgrade?utm_source=x', { body: BODY })
+
+      expect(response.statusCode).toBe(200)
+      const { status, content } = createContentResponseSchema.parse(response.json())
+      expect(status).toBe('duplicate')
+      expect(content).toEqual({ ...first.content, extractionLevel: 'full' })
+      expect(await bodyOf(content.id)).toBe(BODY)
+      expect(await contentCount(user.id)).toBe(1)
+      expect(await queuedJobsFor(content.id)).toHaveLength(1)
+    })
+
+    it('본문을 넣을 때 비어 있는 제목·설명·이미지만 채운다', async () => {
+      const app = newApp()
+      const user = await newUser()
+      const id = await insertContent(user.id, 'fill-empty', { title: '원래 제목' })
+
+      const response = await again(app, user.token, 'fill-empty', {
+        body: BODY,
+        title: '새 제목',
+        description: '새 설명',
+        imageUrl: 'https://example.com/new.png',
+      })
+
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content).toMatchObject({
+        id,
+        title: '원래 제목',
+        description: '새 설명',
+        imageUrl: 'https://example.com/new.png',
+        extractionLevel: 'full',
+      })
+    })
+
+    it('본문이 이미 있으면 아무것도 바꾸지 않는다', async () => {
+      const app = newApp()
+      const user = await newUser()
+      const first = createContentResponseSchema.parse(
+        (await again(app, user.token, 'keep', { body: '먼저 저장한 본문' })).json(),
+      )
+
+      const response = await again(app, user.token, 'keep', {
+        body: BODY,
+        title: '나중 제목',
+        description: '나중 설명',
+        imageUrl: 'https://example.com/later.png',
+      })
+
+      const { status, content } = createContentResponseSchema.parse(response.json())
+      expect(status).toBe('duplicate')
+      expect(content).toEqual(first.content)
+      expect(await bodyOf(content.id)).toBe('먼저 저장한 본문')
+    })
+
+    it.each([
+      ['본문 없이 제목만', { title: '나중 제목' }],
+      ['공백뿐인 본문', { body: ' \n ', title: '나중 제목' }],
+    ])('%s 다시 저장하면 아무것도 바꾸지 않는다', async (_name, extra) => {
+      const app = newApp()
+      const user = await newUser()
+      const first = await saveOk(app, user.token, 'https://example.com/untouched')
+
+      const response = await again(app, user.token, 'untouched', extra)
+
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content).toEqual(first.content)
+      expect(await bodyOf(content.id)).toBeNull()
+    })
+
+    it('본문이 없어 no_content였던 요약 상태는 본문이 생기면 pending으로 돌아간다', async () => {
+      // no_content는 "본문 없음"이다. 본문이 생겼는데 그대로면 두 축이 서로 어긋난다.
+      const app = newApp()
+      const user = await newUser()
+      await insertContent(user.id, 'no-content', {
+        metadataStatus: 'done',
+        summaryStatus: 'no_content',
+      })
+
+      const response = await again(app, user.token, 'no-content', { body: BODY })
+
+      const { content } = createContentResponseSchema.parse(response.json())
+      expect(content).toMatchObject({
+        extractionLevel: 'full',
+        summaryStatus: 'pending',
+        metadataStatus: 'done',
+      })
+    })
+
+    it('다른 사용자의 같은 URL 콘텐츠는 건드리지 않는다', async () => {
+      const app = newApp()
+      const alice = await newUser()
+      const bob = await newUser()
+      const alices = await saveOk(app, alice.token, 'https://example.com/both')
+      await saveOk(app, bob.token, 'https://example.com/both')
+
+      await again(app, bob.token, 'both', { body: BODY })
+
+      expect(await bodyOf(alices.content.id)).toBeNull()
+      const mine = contentSchema.parse((await getOne(app, alice.token, alices.content.id)).json())
+      expect(mine).toEqual(alices.content)
+    })
   })
 
   it('응답에 계약에 없는 필드가 없다', async () => {
