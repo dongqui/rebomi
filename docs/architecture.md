@@ -11,16 +11,16 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
-| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`). 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/`는 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음 |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트 하나. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
-| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마 |
-| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`. 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
+| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
+| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`, `saveWaitlistResponse()`(토큰 없이 보낸다). 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
 | `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)·잡 페이로드 타입·재시도 정책(`CONTENT_PROCESS_RETRY`) |
-| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`·`content_bodies`(§4) 테이블, PGroonga·pgvector 확장 활성화 |
+| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`·`content_bodies`(§4), `waitlist_responses`(§8) 테이블, PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
@@ -196,6 +196,12 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 목표 단위 경제: Pro 사용자 1인당 월 AI 비용 ≤ 구독료의 15%. 건당 비용은 Phase 2에서 측정해 기록한다.
 
 ## 8. 개인정보
+
+- **대기 명단 설문 응답 (구현됨, [waitlist](features/waitlist.md)):** `PUT /waitlist/responses/:id`는 로그인 없이 받는다. `:id`는 브라우저가 만든 UUID이고, 요청은 지금까지의 답 전체다 — 없으면 만들고 있으면 덮어쓴다(보내지 않은 답은 비운다). 이메일만 예외로, 이메일 없는 요청은 저장된 이메일을 지우지 않는다. 성공은 본문 없는 204다.
+  - 저장된 이메일과 답을 돌려주는 경로는 없다. ID를 아는 쪽은 그 응답을 덮어쓸 수 있을 뿐 읽을 수 없다.
+  - `waitlist_responses`는 `users`와 무관하다. 이메일은 앞뒤 공백을 떼고 소문자로 저장하며 유일하지 않다. 답은 화면 문구가 아닌 고정 키이고(`api-contract`의 `WAITLIST_*`), DB의 check 제약이 같은 목록을 강제한다.
+  - 요청 제한: 이 경로에만 IP당 1분 60회(`@fastify/rate-limit`, 메모리 저장 — API 인스턴스가 여럿이면 인스턴스마다 따로 센다). 넘으면 429 `RATE_LIMITED`. 요청 본문은 4KB까지다. 프록시 뒤에 배포할 때는 `TRUST_PROXY=true`로 프록시가 넘긴 주소를 요청자로 본다 — 직접 노출된 서버에서 켜면 주소를 속여 제한을 피할 수 있다.
+  - 수집 고지와 보관 기간은 **D-16**(공개 배포 전에 정한다).
 
 - 클라이언트 캡처는 로그인·페이월 뒤 본문까지 서버에 저장한다. 캡처 전 안내는 두지 않고, 저장 결과의 추출 수준 표시와 스토어 등록정보·개인정보처리방침으로 알린다([capture](features/capture.md) §5 "본문 저장 고지", 2026-11-13 결정 — 원문 11.8의 사전 안내를 대체).
 - 서버가 가져온 페이지의 원본 HTML은 저장하지 않는다. 추출한 본문 텍스트만 저장하고, 콘텐츠를 지우면 함께 지운다.

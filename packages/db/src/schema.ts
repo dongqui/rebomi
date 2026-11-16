@@ -158,3 +158,75 @@ export const refreshTokens = pgTable(
   },
   (table) => [index('refresh_tokens_user_id_idx').on(table.userId)],
 )
+
+/*
+ * 대기 명단 랜딩의 설문 응답 (waitlist.md). 답은 화면 문구가 아니라 고정 키다.
+ * 같은 값 목록이 `@rebomi/api-contract` 의 waitlist 스키마에도 있다 — 어긋남은
+ * 요청을 행으로 옮기는 apps/api 의 타입체크가 잡는다.
+ */
+
+/** 저장한 것들이 쌓이는 곳 (복수 선택). */
+export const WAITLIST_SAVE_PLACES = [
+  'instagram',
+  'youtube',
+  'reddit',
+  'x',
+  'browser',
+  'notes',
+  'other',
+] as const
+/** 저장한 걸 다시 보는 빈도. */
+export const WAITLIST_REVISIT_FREQUENCIES = ['almost_never', 'sometimes', 'most_weeks'] as const
+/** 가장 도움이 될 것. */
+export const WAITLIST_MOST_HELPFUL = ['summary', 'search', 'resurfacing', 'one_place'] as const
+/** 지불 의향. */
+export const WAITLIST_WILLINGNESS_TO_PAY = ['yes', 'maybe', 'no'] as const
+/** 방문자가 본 언어. */
+export const WAITLIST_LOCALES = ['ko', 'en'] as const
+/** 방문자가 본 헤드라인 (광고 소재). */
+export const WAITLIST_HEADLINES = ['forgot', 'scattered', 'find'] as const
+
+/**
+ * 설문 응답 하나. 방문자가 답을 고를 때마다 같은 행을 갱신한다.
+ *
+ * - `id` 는 브라우저가 만든다. DB 기본값을 두지 않는다.
+ * - 답하지 않은 질문과 내지 않은 이메일은 비어 있다. 어디까지 답했는지가 여기서 보인다.
+ * - 이메일은 유일하지 않다. 같은 이메일로 여러 번 등록할 수 있다.
+ * - 계정(`users`)과 무관하다. 이 이메일로 가입해도 연결하지 않는다.
+ */
+export const waitlistResponses = pgTable(
+  'waitlist_responses',
+  {
+    id: uuid('id').primaryKey(),
+    locale: text('locale', { enum: WAITLIST_LOCALES }).notNull(),
+    headline: text('headline', { enum: WAITLIST_HEADLINES }).notNull(),
+    savePlaces: text('save_places', { enum: WAITLIST_SAVE_PLACES })
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    revisitFrequency: text('revisit_frequency', { enum: WAITLIST_REVISIT_FREQUENCIES }),
+    mostHelpful: text('most_helpful', { enum: WAITLIST_MOST_HELPFUL }),
+    willingnessToPay: text('willingness_to_pay', { enum: WAITLIST_WILLINGNESS_TO_PAY }),
+    /** 앞뒤 공백을 떼고 소문자로 넣는다. */
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('waitlist_responses_locale_check', oneOf(table.locale, WAITLIST_LOCALES)),
+    check('waitlist_responses_headline_check', oneOf(table.headline, WAITLIST_HEADLINES)),
+    check(
+      'waitlist_responses_save_places_check',
+      sql`${table.savePlaces} <@ array[${sql.raw(WAITLIST_SAVE_PLACES.map((value) => `'${value}'`).join(', '))}]::text[]`,
+    ),
+    check(
+      'waitlist_responses_revisit_frequency_check',
+      oneOf(table.revisitFrequency, WAITLIST_REVISIT_FREQUENCIES),
+    ),
+    check('waitlist_responses_most_helpful_check', oneOf(table.mostHelpful, WAITLIST_MOST_HELPFUL)),
+    check(
+      'waitlist_responses_willingness_to_pay_check',
+      oneOf(table.willingnessToPay, WAITLIST_WILLINGNESS_TO_PAY),
+    ),
+  ],
+)

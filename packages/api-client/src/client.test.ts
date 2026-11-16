@@ -1,3 +1,4 @@
+import type { SaveWaitlistResponseRequest } from '@rebomi/api-contract'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { ApiError, createApiClient, type AuthTokens, type TokenStore } from './index.js'
 
@@ -666,5 +667,63 @@ describe('listContents()', () => {
     const error = await caught(client.listContents())
 
     expect(error.code).toBe('UNAUTHORIZED')
+  })
+})
+
+describe('saveWaitlistResponse()', () => {
+  const ID = '0b0e7c7e-7b1f-4d0a-9d55-0d6f2f1f6a11'
+  const ANSWERS: SaveWaitlistResponseRequest = {
+    locale: 'ko',
+    headline: 'forgot',
+    savePlaces: ['instagram'],
+  }
+
+  it('응답 ID의 경로로 PUT하고 지금까지의 답을 그대로 싣는다', async () => {
+    const spy = stubFetch(() => Promise.resolve(new Response(null, { status: 204 })))
+    const client = createApiClient({ baseUrl: 'http://api.test' })
+    const request: SaveWaitlistResponseRequest = {
+      ...ANSWERS,
+      revisitFrequency: 'sometimes',
+      email: 'a@example.com',
+    }
+
+    const result = await client.saveWaitlistResponse(ID, request)
+
+    expect(result).toBeUndefined()
+    expect(calls(spy)).toEqual([`PUT /waitlist/responses/${ID}`])
+    expect(bodyOf(spy.mock.calls[0]?.[1])).toEqual(request)
+  })
+
+  it('로그인돼 있어도 액세스 토큰을 붙이지 않는다', async () => {
+    const spy = stubFetch(() => Promise.resolve(new Response(null, { status: 204 })))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    await client.saveWaitlistResponse(ID, ANSWERS)
+
+    expect(bearerOf(spy.mock.calls[0]?.[1])).toBeNull()
+  })
+
+  it('요청 한도를 넘으면(429) RATE_LIMITED 코드의 ApiError로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        json({ error: { code: 'RATE_LIMITED', message: '요청이 너무 많습니다' } }, 429),
+      ),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test' })
+
+    const error = await caught(client.saveWaitlistResponse(ID, ANSWERS))
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).toBe('RATE_LIMITED')
+    expect(error.status).toBe(429)
+  })
+
+  it('서버에 닿지 못하면 NETWORK 코드의 ApiError로 던진다', async () => {
+    stubFetch(() => Promise.reject(new TypeError('fetch failed')))
+    const client = createApiClient({ baseUrl: 'http://api.test' })
+
+    const error = await caught(client.saveWaitlistResponse(ID, ANSWERS))
+
+    expect(error.code).toBe('NETWORK')
   })
 })

@@ -13,6 +13,10 @@ const CLIENT_ERRORS: Record<number, { code: string; message: string }> = {
   401: { code: ERROR_CODES.UNAUTHORIZED, message: '인증이 필요합니다' },
   403: { code: ERROR_CODES.BAD_REQUEST, message: '권한이 없습니다' },
   404: { code: ERROR_CODES.NOT_FOUND, message: '요청한 경로가 없습니다' },
+  429: {
+    code: ERROR_CODES.RATE_LIMITED,
+    message: '요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요',
+  },
   415: { code: ERROR_CODES.BAD_REQUEST, message: '지원하지 않는 Content-Type 입니다' },
 }
 
@@ -63,8 +67,6 @@ export function registerErrorHandler(app: FastifyInstance): void {
   // HTML을 돌려줬다"를 구분할 수 있어야 한다.
   app.setNotFoundHandler((request, reply) => {
     request.log.warn({ url: request.url }, 'route not found')
-    return reply
-      .status(404)
-      .send(errorBody(ERROR_CODES.NOT_FOUND, '요청한 경로가 없습니다'))
+    return reply.status(404).send(errorBody(ERROR_CODES.NOT_FOUND, '요청한 경로가 없습니다'))
   })
 }

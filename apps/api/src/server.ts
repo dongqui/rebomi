@@ -28,6 +28,7 @@ const app = buildApp({
   },
   jobs,
   logger: true,
+  trustProxy: env.TRUST_PROXY,
 })
 
 if (!verifiers.google) app.log.warn('GOOGLE_CLIENT_IDS가 비어 있어 Google 로그인을 쓸 수 없습니다')
