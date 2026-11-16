@@ -73,6 +73,39 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15))
 
+  apps/e2e:
+    devDependencies:
+      '@rebomi/api':
+        specifier: workspace:*
+        version: link:../api
+      '@rebomi/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
+      '@rebomi/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@rebomi/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@rebomi/worker':
+        specifier: workspace:*
+        version: link:../worker
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.4.2
+      eslint:
+        specifier: ^10.14.0
+        version: 10.14.0(supports-color@8.1.1)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15))
+
   apps/extension:
     dependencies:
       '@rebomi/api-client':
