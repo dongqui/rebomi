@@ -21,6 +21,7 @@ export {
 export {
   CONTENT_LIST_DEFAULT_LIMIT,
   CONTENT_LIST_MAX_LIMIT,
+  CONTENT_SAVE_LIMITS,
   archiveStateSchema,
   contentJsonSchema,
   contentSchema,

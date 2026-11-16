@@ -130,6 +130,7 @@ mobile ────┘                                  │ └→ core
 | Inbox·보관됨 → 휴지통 | 사용자의 삭제 액션 |
 | 휴지통 → 이전 상태 | 삭제 복구 (복구 시 어느 상태로 돌아가는지는 원문에 없다 — 설계에서 결정) |
 | 휴지통 → 영구 삭제 | 30일 경과 |
+| 추출 수준 `metadata_only` → `full` (저장 시) | 저장 요청에 본문이 함께 옴. 새 저장이면 처음부터 `full`. 이미 저장한 URL이면 기존이 `metadata_only`일 때만 올리고, 요약 상태가 `no_content`였으면 `pending`으로 돌린다 |
 | 메타데이터 처리 `pending` → `done` | 워커가 페이지를 받아 처리함. 본문을 뽑았으면 추출 수준 `full`, 요약 상태는 `pending` 유지. 본문이 없으면 추출 수준은 그대로(`metadata_only`), 요약 상태 `no_content` |
 | 메타데이터 처리 `pending` → `failed` | 다시 해도 소용없는 오류, 또는 재시도 소진. 요약 상태 `no_content`. 콘텐츠는 남는다 |
 
@@ -148,9 +149,12 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 - **저장은 동기, 처리는 비동기.** 저장 요청은 콘텐츠 행을 만들고 바로 응답한다. 요약·임베딩이 끝나지 않아도 목록과 키워드 검색에 나타나야 한다. **[원문 4.1, 4.3]**
 - **본문 추출 우선순위:** 클라이언트 캡처 → 공유 텍스트 → 서버 fetch → 메타데이터만. 클라이언트가 본문을 보냈으면 서버 fetch는 하지 않는다(보조). **[원문 4.1]**
 - **잡의 위치:** 메타데이터 수집, 서버 보조 추출, 링크 생존 확인, 요약, 임베딩, 재노출 선정은 모두 `apps/worker`의 pg-boss 잡이다. 큐 이름과 페이로드 타입은 한 곳(`packages/core`의 `QUEUES`, `ContentProcessPayload`)에 두고 api(보내는 쪽)와 worker(받는 쪽)가 같은 것을 쓴다. 저장된 콘텐츠의 서버 측 처리 큐는 `content-process`이고 페이로드는 `{ contentId }`다. 재시도 정책도 `core`의 `CONTENT_PROCESS_RETRY`에 있고 api가 잡에 실어 보낸다.
-- **저장 API (`POST /contents`, 구현됨):** `core.normalizeUrl`로 정규화하고 `(user_id, normalized_url)` 유일 제약으로 중복을 판정한다. 새로 저장하면 201, 이미 있으면 200이고 본문은 둘 다 `{ status: 'created' | 'duplicate', content }`다 — 중복은 오류가 아니며 기존 콘텐츠를 그대로 준다(두 번째 요청의 URL·출처로 덮어쓰지 않는다). http(s)가 아닌 입력은 400 `VALIDATION_FAILED`. `domain`은 호스트에서 앞의 `www.`만 뗀 값이다. 지금은 URL만 받는다 — 본문을 함께 받는 저장은 확장·모바일 Issue에서 더한다.
+- **저장 API (`POST /contents`, 구현됨):** `core.normalizeUrl`로 정규화하고 `(user_id, normalized_url)` 유일 제약으로 중복을 판정한다. 새로 저장하면 201, 이미 있으면 200이고 본문은 둘 다 `{ status: 'created' | 'duplicate', content }`다 — 중복은 오류가 아니며 기존 콘텐츠를 그대로 준다(두 번째 요청의 URL·출처로 덮어쓰지 않는다). http(s)가 아닌 입력은 400 `VALIDATION_FAILED`. `domain`은 호스트에서 앞의 `www.`만 뗀 값이다.
+  - **함께 받는 값:** 저장하는 쪽은 `title`·`description`·`body`·`imageUrl`을 선택으로 보낼 수 있다. 상한은 제목 500자, 설명 2,000자, 본문 20만 자, 이미지 주소 2,048자이고(`api-contract`의 `CONTENT_SAVE_LIMITS`, 워커의 추출 상한과 같다) 이미지는 절대 http(s) 주소만 받는다. 넘거나 모양이 틀리면 자르지 않고 400 `VALIDATION_FAILED`로 거부한다 — 보내는 쪽이 잘라 보낸다. 이 경로의 요청 크기 제한은 2MB다. 앞뒤 공백은 떼고, 공백뿐인 값은 보내지 않은 것으로 본다.
+  - **본문이 오면** `content_bodies`에 넣고 추출 수준을 `full`로 시작한다. 콘텐츠 행·본문·잡이 한 트랜잭션이다. 처리 상태는 본문이 있어도 `pending`으로 시작하고 잡도 넣는다 — 가져올지 말지는 워커가 정한다.
+  - **이미 저장한 URL에 본문이 오면** 기존 추출 수준이 `metadata_only`일 때만 그 본문을 넣고 `full`로 올린다. 이때 제목·설명·이미지는 비어 있는 것만 채우고, 요약 상태가 `no_content`였으면 `pending`으로 돌린다. 본문이 이미 있으면 아무것도 바꾸지 않는다. 어느 쪽이든 응답은 `duplicate`이고 저장일은 그대로이며 잡을 더 넣지 않는다.
 - **행과 잡은 한 트랜잭션이다.** api는 콘텐츠 행 삽입과 `content-process` 잡 삽입을 같은 DB 트랜잭션에서 한다(`Db.transaction` + pg-boss `send`의 `db` 옵션). 잡을 넣지 못하면 행도 남지 않는다 — 행만 남으면 그 콘텐츠는 영원히 처리 중이고, 다시 저장해도 중복이라 고칠 길이 없다. api의 pg-boss는 보내기 전용이고(유지보수·스케줄 꺼짐) 소비는 worker가 한다.
-- **콘텐츠 처리 잡 (`content-process`, 구현됨):** 워커가 저장된 URL을 가져와 제목(`og:title` → `<title>`), 설명(`og:description` → meta description), 이미지(`og:image` → `twitter:image`, 절대 http(s) 주소)와 본문을 채운다. 저장한 쪽이 먼저 채운 값은 덮어쓰지 않는다. 처리 중인(`metadata_status = pending`) 행만 고치므로 같은 잡이 두 번 돌아도 결과가 같다. 지금은 모든 저장이 URL만 보내므로 항상 가져온다 — 클라이언트가 본문을 보내는 저장이 생기면 그 콘텐츠는 가져오지 않게 해야 한다.
+- **콘텐츠 처리 잡 (`content-process`, 구현됨):** 워커가 저장된 URL을 가져와 제목(`og:title` → `<title>`), 설명(`og:description` → meta description), 이미지(`og:image` → `twitter:image`, 절대 http(s) 주소)와 본문을 채운다. 저장한 쪽이 먼저 채운 값은 덮어쓰지 않는다. 처리 중인(`metadata_status = pending`) 행만 고치므로 같은 잡이 두 번 돌아도 결과가 같다. 지금은 본문을 함께 받은 콘텐츠도 가져온다(가져온 본문은 이미 있는 본문을 덮어쓰지 않는다) — 본문이 이미 있는 콘텐츠는 가져오지 않게 해야 한다.
   - **본문 추출은 규칙 기반이다(AI를 쓰지 않는다).** Readability(`@mozilla/readability` + `linkedom`)가 비어 있지 않은 결과를 내면 길이와 무관하게 본문으로 본다. 원본 HTML은 저장하지 않고 텍스트만 20만 자까지 저장한다. AI로 본문을 뽑는 보완은 서버 추출 성공률(H4)을 재 본 뒤에 판단한다.
   - **재시도:** 연결 실패·시간 초과·5xx·429 같은 일시 오류만 최대 3번(30초부터 두 배씩) 다시 한다. 그 밖의 4xx, HTML이 아닌 응답, 5MB 초과, 리다이렉트 5번 초과, 차단된 주소는 바로 실패로 기록한다. 마지막 시도까지 실패하면 실패로 기록하고 잡은 끝낸다 — 워커는 계속 돈다.
   - **나가는 요청의 제한:** 주소는 사용자 입력이라 믿지 않는다. 사설·루프백·링크 로컬 주소로는 연결하지 않고(연결 직전의 DNS 결과로 판정), 리다이렉트는 직접 따라가며 매번 다시 검사한다. 요청 전체 10초, 응답 5MB(압축을 푼 크기). User-Agent는 `Mozilla/5.0 (compatible; RebomiBot/0.1)`로 봇임을 밝힌다. robots.txt는 확인하지 않는다 — 사용자가 저장한 주소 하나만 가져온다. 로그에는 콘텐츠 ID와 실패 사유만 남기고 주소는 남기지 않는다.

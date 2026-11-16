@@ -51,14 +51,41 @@ export const contentSchema = z.object({
 export type Content = z.infer<typeof contentSchema>
 
 /**
+ * 저장하는 쪽이 함께 보내는 값의 상한(글자 수). 워커가 페이지에서 추출할 때 쓰는 상한과
+ * 같다 — 어느 쪽이 채워도 같은 크기다. 넘으면 서버가 자르지 않고 거부하므로, 보내는 쪽이
+ * 이 값에 맞춰 잘라 보낸다.
+ */
+export const CONTENT_SAVE_LIMITS = {
+  title: 500,
+  description: 2_000,
+  imageUrl: 2_048,
+  body: 200_000,
+} as const
+
+/**
  * 콘텐츠 생성(저장) 요청.
  *
  * URL이 http(s)인지는 서버가 `core.normalizeUrl` 로 판정한다 — 여기서는 모양만 본다.
  * 가져오기는 별도 경로로 들어오므로 저장 요청의 출처가 될 수 없다.
+ *
+ * `title`·`description`·`body`·`imageUrl` 은 저장하는 쪽이 페이지를 직접 볼 수 있을 때
+ * 함께 보낸다(확장, 모바일 공유). 없으면 서버가 나중에 가져온다.
  */
 export const createContentRequestSchema = z.object({
   url: z.string().min(1).max(2048),
   source: contentSourceSchema.exclude(['import']),
+  title: z.string().max(CONTENT_SAVE_LIMITS.title).optional(),
+  /** 페이지가 스스로 밝힌 설명. 요약이 아니다. */
+  description: z.string().max(CONTENT_SAVE_LIMITS.description).optional(),
+  /** 본문 텍스트. 공백뿐이면 서버는 본문이 없는 것으로 본다. 응답에는 실리지 않는다. */
+  body: z.string().max(CONTENT_SAVE_LIMITS.body).optional(),
+  /** 대표 이미지. 절대 http(s) 주소만 받는다. */
+  imageUrl: z
+    .url({ protocol: /^https?$/ })
+    // `https:example.com` 처럼 `//` 없이도 URL로 읽히는 모양을 막는다.
+    .regex(/^https?:\/\//i)
+    .max(CONTENT_SAVE_LIMITS.imageUrl)
+    .optional(),
 })
 
 export type CreateContentRequest = z.infer<typeof createContentRequestSchema>

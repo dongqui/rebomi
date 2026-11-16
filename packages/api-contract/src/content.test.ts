@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CONTENT_SAVE_LIMITS,
   contentJsonSchema,
   contentSchema,
   createContentRequestSchema,
@@ -77,6 +78,75 @@ describe('createContentRequestSchema', () => {
       createContentRequestSchema.safeParse({ url: 'https://example.com/a', source: 'import' })
         .success,
     ).toBe(false)
+  })
+
+  describe('저장하는 쪽이 함께 보내는 값', () => {
+    const base = { url: 'https://example.com/a', source: 'extension' }
+
+    it('제목·설명·본문·대표 이미지를 받는다', () => {
+      const request = {
+        ...base,
+        title: '다시 만나는 글',
+        description: '페이지가 밝힌 설명',
+        body: '본문 텍스트',
+        imageUrl: 'https://example.com/cover.png',
+      }
+      expect(createContentRequestSchema.parse(request)).toEqual(request)
+    })
+
+    it.each([
+      ['title', CONTENT_SAVE_LIMITS.title],
+      ['description', CONTENT_SAVE_LIMITS.description],
+      ['body', CONTENT_SAVE_LIMITS.body],
+    ] as const)('%s 는 상한(%d자)까지 받고 한 글자라도 넘으면 거부한다', (field, limit) => {
+      expect(
+        createContentRequestSchema.safeParse({ ...base, [field]: '가'.repeat(limit) }).success,
+      ).toBe(true)
+      expect(
+        createContentRequestSchema.safeParse({ ...base, [field]: '가'.repeat(limit + 1) }).success,
+      ).toBe(false)
+    })
+
+    it('상한은 워커가 추출할 때 쓰는 값과 같다', () => {
+      // 워커의 EXTRACT_LIMITS(apps/worker/src/extract.ts)와 같아야 어느 쪽이 채워도 같은 크기다.
+      expect(CONTENT_SAVE_LIMITS).toEqual({
+        title: 500,
+        description: 2_000,
+        imageUrl: 2_048,
+        body: 200_000,
+      })
+    })
+
+    it('대표 이미지는 상한 길이까지 받고 넘으면 거부한다', () => {
+      const prefix = 'https://example.com/'
+      const atLimit = prefix + 'a'.repeat(CONTENT_SAVE_LIMITS.imageUrl - prefix.length)
+      expect(createContentRequestSchema.safeParse({ ...base, imageUrl: atLimit }).success).toBe(
+        true,
+      )
+      expect(
+        createContentRequestSchema.safeParse({ ...base, imageUrl: `${atLimit}a` }).success,
+      ).toBe(false)
+    })
+
+    it.each([
+      '/cover.png',
+      'cover.png',
+      '//example.com/cover.png',
+      'data:image/png;base64,AAAA',
+      'javascript:alert(1)',
+      'ftp://example.com/cover.png',
+      '',
+    ])('대표 이미지 "%s" 는 절대 http(s) 주소가 아니어서 거부한다', (imageUrl) => {
+      expect(createContentRequestSchema.safeParse({ ...base, imageUrl }).success).toBe(false)
+    })
+
+    it.each(['title', 'description', 'body', 'imageUrl'])(
+      '%s 가 문자열이 아니면 거부한다',
+      (field) => {
+        expect(createContentRequestSchema.safeParse({ ...base, [field]: 1 }).success).toBe(false)
+        expect(createContentRequestSchema.safeParse({ ...base, [field]: null }).success).toBe(false)
+      },
+    )
   })
 })
 
