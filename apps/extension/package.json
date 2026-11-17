@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "@rebomi/api-client": "workspace:*",
     "@rebomi/api-contract": "workspace:*",
     "react": "^19.3.1",

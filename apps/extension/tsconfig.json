@@ -8,7 +8,7 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "types": ["node", "vite/client"]
+    "types": ["node", "vite/client", "@crxjs/vite-plugin/client"]
   },
   "include": ["src/**/*", "vite.config.ts", "vitest.config.ts", "manifest.config.ts"]
 }

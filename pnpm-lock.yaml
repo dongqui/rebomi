@@ -111,6 +111,9 @@ importers:
 
   apps/extension:
     dependencies:
+      '@mozilla/readability':
+        specifier: ^0.6.0
+        version: 0.6.0
       '@rebomi/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client

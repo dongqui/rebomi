@@ -14,7 +14,7 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음. 스타일은 Tailwind CSS 4이고 지금은 랜딩에만 적용돼 있다(§8) |
-| `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **로그인 상태만.** 팝업이 웹 로그인을 재사용해 로그인 여부를 보이고 인증된 요청을 보낸다(§3). 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
+| `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **원클릭 저장.** 팝업을 열면 웹 로그인을 재사용해(§3) 지금 탭의 제목·설명·대표 이미지·본문을 뽑아 저장하고 결과와 추출 수준을 보인다(§5). 권한은 `activeTab`·`scripting`과 API 오리진. background·상시 content script·단축키·우클릭 메뉴 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
 | `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
@@ -25,7 +25,7 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
 - **인증: 서버, `api-client`, 웹, 확장이 구현됨(§3).** 모바일의 로그인과 토큰 보관은 없다. 콘텐츠 라우트는 `requireAuth`를 지난다.
-- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`은 컴포넌트 테스트(Testing Library + jsdom)가 있고 `fetch`만 가짜로 바꿔 실제 `api-client`를 통과시킨다. `extension`도 같은 방식의 팝업 테스트가 있다. `mobile`에는 자동 테스트가 없다. E2E 없음.
+- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`은 컴포넌트 테스트(Testing Library + jsdom)가 있고 `fetch`만 가짜로 바꿔 실제 `api-client`를 통과시킨다. `extension`도 같은 방식의 팝업 테스트와 추출 함수 테스트(jsdom)가 있다. `mobile`에는 자동 테스트가 없다. E2E 없음.
 - **CI:** `.github/workflows/ci.yml`이 push·PR마다 Postgres 이미지 빌드 → migrate → lint → typecheck → test → build를 돌린다. 모바일 네이티브 빌드(EAS) 없음.
 - **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다. 예외는 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS`로, 비어 있어도 API는 뜨고 그 제공자의 로그인만 503이다. 웹은 `NEXT_PUBLIC_API_BASE_URL`·`NEXT_PUBLIC_GOOGLE_CLIENT_ID`·`NEXT_PUBLIC_APPLE_CLIENT_ID` 중 하나라도 없으면 dev·build가 실패한다(`next.config.ts`). CI는 두 클라이언트 ID를 자리 채움 값으로 준다.
 - **확인 필요:** 스캐폴드 스펙 9장의 미결(Expo isolated 설치의 네이티브 빌드 동작, @crxjs 유지보수 상태)은 기능 개발 중 실제 빌드로 확인한다. 스캐폴드의 실행 가능 여부는 이 문서 작성 시 다시 실행해 보지 않았다 — README와 CI 구성에 근거한다.
@@ -72,7 +72,8 @@ mobile ────┘                                  │ └→ core
 - 쿠키가 실리는 조건은 둘이다. 매니페스트의 `host_permissions`에 API 오리진이 있어야 Chrome이 확장 페이지의 요청에 `SameSite=Lax` 쿠키를 붙이고, 확장의 오리진(`chrome-extension://<id>`)이 `CORS_ORIGINS`에 있어야 서버가 쿠키로 온 갱신 요청을 받는다(아니면 403).
 - 로그인돼 있지 않으면(갱신이 401·403) 팝업이 알리고, 버튼이 `VITE_WEB_BASE_URL`의 `/login`을 새 탭으로 연다. 서버에 닿지 못한 경우는 웹처럼 로그아웃과 구분한다.
 - 웹에서 로그아웃하면 쿠키가 지워지고 갱신 토큰이 폐기되므로 확장도 다음에 열 때 로그인이 필요한 상태다. 확장에는 로그아웃이 없다.
-- 아직 없는 것: 팝업 밖(background)에서의 토큰 공유 — 저장 기능이 붙을 때 정한다. 확장 ID 고정(매니페스트 `key`) — 지금은 unpacked 경로에서 생긴 ID를 `CORS_ORIGINS`에 직접 넣는다.
+- 저장도 팝업 안에서 끝나므로 팝업 밖(background)에서 토큰을 나눠 쓰지 않는다.
+- 아직 없는 것: 확장 ID 고정(매니페스트 `key`) — 지금은 unpacked 경로에서 생긴 ID를 `CORS_ORIGINS`에 직접 넣는다.
 
 **토큰 (2026-11-11 결정)**
 
@@ -167,6 +168,11 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
   - **본문 추출은 규칙 기반이다(AI를 쓰지 않는다).** Readability(`@mozilla/readability` + `linkedom`)가 비어 있지 않은 결과를 내면 길이와 무관하게 본문으로 본다. 원본 HTML은 저장하지 않고 텍스트만 20만 자까지 저장한다. AI로 본문을 뽑는 보완은 서버 추출 성공률(H4)을 재 본 뒤에 판단한다.
   - **재시도:** 연결 실패·시간 초과·5xx·429 같은 일시 오류만 최대 3번(30초부터 두 배씩) 다시 한다. 그 밖의 4xx, HTML이 아닌 응답, 5MB 초과, 리다이렉트 5번 초과, 차단된 주소는 바로 실패로 기록한다. 마지막 시도까지 실패하면 실패로 기록하고 잡은 끝낸다 — 워커는 계속 돈다.
   - **나가는 요청의 제한:** 주소는 사용자 입력이라 믿지 않는다. 사설·루프백·링크 로컬 주소로는 연결하지 않고(연결 직전의 DNS 결과로 판정), 리다이렉트는 직접 따라가며 매번 다시 검사한다. 요청 전체 10초, 응답 5MB(압축을 푼 크기). User-Agent는 `Mozilla/5.0 (compatible; RebomiBot/0.1)`로 봇임을 밝힌다. robots.txt는 확인하지 않는다 — 사용자가 저장한 주소 하나만 가져온다. 로그에는 콘텐츠 ID와 실패 사유만 남기고 주소는 남기지 않는다.
+- **확장의 저장 (`apps/extension/src/capture/`, 구현됨):** 팝업을 열면 로그인 확인 뒤 바로 저장한다 — 저장 버튼도, 캡처 전 안내도 없다(capture CAP-2, §5 본문 저장 고지).
+  - **페이지 읽기:** `activeTab` + `scripting` 권한으로, 사용자가 확장 버튼을 누른 그 탭에 그때 한 번 추출 스크립트를 넣는다(`chrome.scripting.executeScript`). 스크립트는 페이지와 분리된 세계에서 돌고 결과를 팝업이 읽어 간다. 상시 content script와 모든 사이트 권한은 없다. 빌드는 스크립트를 한 파일(IIFE)로 묶고, crxjs가 자동으로 넣는 `web_accessible_resources`는 뺀다 — 남기면 웹 페이지가 확장의 설치 여부를 알아낼 수 있다.
+  - **추출:** 제목·설명·이미지는 워커와 같은 순서로 고른다. 본문은 문서의 복사본에 Readability를 돌리고(보고 있는 페이지를 고치지 않는다), 결과가 없으면 화면에 보이는 텍스트(`innerText`)로 대체한다 — SNS처럼 기사 구조가 없는 페이지를 위한 것이고 메뉴 같은 잡음이 섞일 수 있다. 화면에 텍스트가 없으면 본문 없이 저장한다. 값은 `CONTENT_SAVE_LIMITS`에 맞춰 잘라 보낸다.
+  - **저장할 수 없는 탭:** http(s)가 아닌 탭(브라우저 내부 페이지, 파일)은 이유를 보이고 서버에 보내지 않는다. 스크립트를 넣을 수 없는 http(s) 페이지(Chrome 웹 스토어 등)는 URL과 탭 제목만 저장한다.
+  - **결과:** 저장됨 / 이미 저장됨, 제목, 추출 수준을 보인다. 서버에 닿지 못하거나 서버가 거부하면 실패와 다시 시도를 보인다. 요청은 팝업을 한 번 열 때 한 번만 보낸다.
 - **목록 API (`GET /contents`, 구현됨):** 요청한 사용자의 콘텐츠 중 휴지통을 뺀 것을 저장일 최근순으로 준다. `limit`(기본 50, 최대 100)과 `cursor`를 받고 `{ items, nextCursor }`를 준다. 커서는 `(saved_at, id)` 키셋이고 클라이언트에게는 불투명한 문자열이다 — 중간에 새 저장이 끼어도 건너뛰거나 겹치지 않는다. 상태별 필터와 오래된 순 정렬은 아직 없다.
 - **단건 조회 API (`GET /contents/:id`, 구현됨):** 요청한 사용자의 콘텐츠 하나를 목록과 같은 모양으로 준다. 없는 ID, 남의 콘텐츠, 휴지통의 콘텐츠, UUID 모양이 아닌 ID는 구분하지 않고 404 `NOT_FOUND`다 — 구분하면 ID가 존재하는지 알려 주게 된다. 클라이언트가 처리 상태를 다시 확인하는 데 쓴다.
 - **웹의 처리 상태 갱신 (`apps/web/src/library/`):** 저장은 즉시 응답하고 처리는 워커가 나중에 하므로, 웹은 처리 중(`metadataStatus: pending`)인 항목만 3초마다 단건 조회로 다시 확인한다. 처리 중인 항목이 없거나 탭이 숨겨져 있으면 묻지 않는다. 확인에 실패하면 항목을 그대로 두고 다음 차례에 다시 묻고, 404면 목록에서 뺀다. 서버가 변경을 밀어 주는 방식(SSE·웹소켓)은 쓰지 않는다. 목록은 첫 페이지 50개와 "더 보기"다.
@@ -235,7 +241,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | 결과 결합 | — | RRF | 검색 구현 시 |
 | 요약 LLM | — | "저비용 모델" — 제공자·모델 미정 | 요약 구현 시, 건당 비용 측정 |
 | 웹 | Next.js 16, Tailwind CSS 4, Pretendard 가변 글꼴(로컬 파일) | — | — |
-| 확장 | Vite + @crxjs, MV3 | 본문 추출: Readability 계열 라이브러리(미설치) | capture 구현 시 |
+| 확장 | Vite + @crxjs, MV3. 본문 추출 `@mozilla/readability`(워커와 같은 라이브러리) | — | — |
 | 모바일 | Expo SDK 58 | iOS Share Extension + App Group, Android Share Intent 구현 방식(Expo config plugin 등) 미정 | capture 구현 시 |
 | 인증 | 직접 구현, Google·Apple 소셜 로그인, 액세스(JWT HS256)+갱신 토큰, `jose`, `@fastify/cookie` (§3) | — | — |
 | 푸시 | — | "모바일 푸시 알림 서비스" — 제공자 미정 | resurfacing 푸시 구현 시 |
@@ -245,7 +251,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 **PRD와 저장소의 차이 (어느 쪽이 맞는지 단정하지 않는다)**
 
 - PRD 8장은 서버를 "공통 API 서버"로만 적는다. 저장소는 `api`와 `worker`를 별도 앱으로 나눴다(스캐폴드 스펙 3장의 결정).
-- PRD는 Chrome 확장을 "React + TypeScript + Readability"로 적는다. 저장소에는 React + TypeScript만 있고 Readability는 설치되지 않았다.
+- PRD는 Chrome 확장을 "React + TypeScript + Readability"로 적는다. 저장소도 그렇다 — Readability는 확장의 본문 추출에 쓴다(§5).
 - PRD 4.1은 중복 URL 감지를 "정규화된 URL 기준, 트래킹 파라미터 제거"로 적는다. `core.normalizeUrl`은 `utm_*`, `fbclid`, `gclid`, `igshid`, `ref`만 제거한다. 이 목록이 충분한지는 capture 구현 시 확인한다.
 
 대규모 검색 전용 인프라나 복잡한 RAG 아키텍처는 처음부터 도입하지 않는다. **[원문 8장]**

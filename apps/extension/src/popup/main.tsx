@@ -2,6 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createExtensionApi } from '../auth/api.js'
 import { loginUrl } from '../auth/login-url.js'
+import { createTabCapture, type CaptureChromeApi } from '../capture/capture-tab.js'
+// 빌드된 추출 스크립트의 경로. 페이지에 넣을 수 있게 한 파일(IIFE)로 묶인다.
+import contentScript from '../capture/content.ts?script&iife'
 import { Popup } from './Popup.js'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined
@@ -14,8 +17,10 @@ if (!apiBaseUrl || !webBaseUrl) {
   )
 }
 
-/** 이 파일이 쓰는 확장 API만 선언한다. 탭을 여는 데는 권한이 필요 없다. */
-declare const chrome: { tabs: { create(options: { url: string }): Promise<unknown> } }
+/** 이 확장이 쓰는 확장 API만 선언한다. 탭을 여는 데는 권한이 필요 없다. */
+declare const chrome: CaptureChromeApi & {
+  tabs: { create(options: { url: string }): Promise<unknown> }
+}
 
 const container = document.getElementById('root')
 
@@ -25,12 +30,14 @@ if (!container) {
 
 const { client, tokens } = createExtensionApi(apiBaseUrl)
 const login = loginUrl(webBaseUrl)
+const capture = createTabCapture(chrome, contentScript)
 
 createRoot(container).render(
   <StrictMode>
     <Popup
       client={client}
       tokens={tokens}
+      capture={capture}
       openLogin={() => {
         void chrome.tabs.create({ url: login })
       }}
