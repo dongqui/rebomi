@@ -32,6 +32,7 @@ export type ContentProcessHandler = (
  *
  * | 결과 | extraction_level | metadata_status | summary_status |
  * | --- | --- | --- | --- |
+ * | 본문이 이미 있음 (가져오지 않는다) | 그대로 | done | 그대로 |
  * | 본문 추출됨 | full | done | 그대로(pending) |
  * | 본문 없음 | 그대로 | done | no_content |
  * | 영구 오류·재시도 소진 | 그대로 | failed | no_content |
@@ -55,6 +56,11 @@ export function createContentProcessHandler(deps: ContentProcessDeps): ContentPr
         summaryStatus: sql`case when ${contents.summaryStatus} = 'pending' then 'no_content' else ${contents.summaryStatus} end`,
       })
       .where(pending(contentId))
+  }
+
+  /** 본문이 이미 있는 콘텐츠: 처리 상태만 완료로 바꾼다. 다른 값은 건드리지 않는다. */
+  async function markCaptured(contentId: string): Promise<void> {
+    await db.drizzle.update(contents).set({ metadataStatus: 'done' }).where(pending(contentId))
   }
 
   async function markDone(contentId: string, page: ExtractedPage): Promise<void> {
@@ -107,13 +113,25 @@ export function createContentProcessHandler(deps: ContentProcessDeps): ContentPr
     const { contentId } = payload
 
     const [content] = await db.drizzle
-      .select({ url: contents.url, metadataStatus: contents.metadataStatus })
+      .select({
+        url: contents.url,
+        metadataStatus: contents.metadataStatus,
+        extractionLevel: contents.extractionLevel,
+      })
       .from(contents)
       .where(eq(contents.id, contentId))
 
     // 처리 전에 지워졌거나(휴지통 영구 삭제, 탈퇴) 이미 끝난 잡이다. 할 일이 없다.
     if (!content || content.metadataStatus !== 'pending') {
       log('worker: content-process skipped', { contentId, found: Boolean(content) })
+      return
+    }
+
+    // 저장한 쪽(확장·모바일)이 본문을 보냈다. 서버가 가져오면 로그인 화면이나 다른 내용이
+    // 나올 수 있으므로 요청하지 않는다 — 제목·설명·이미지가 비어 있어도 그대로 둔다.
+    if (content.extractionLevel !== 'metadata_only') {
+      await markCaptured(contentId)
+      log('worker: content-process done', { contentId, hasBody: true, fetched: false })
       return
     }
 

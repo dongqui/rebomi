@@ -8,7 +8,7 @@ import { createContentProcessHandler, fetchPage, startWorker, type Worker } from
 import { afterAll, beforeAll, expect, it } from 'vitest'
 
 /*
- * 저장 → 목록 → 처리 완료의 연결 검증 (capture.md CAP-1·CAP-8, architecture.md §5).
+ * 저장 → 목록 → 처리 완료의 연결 검증 (capture.md CAP-1·CAP-2·CAP-8, architecture.md §5).
  *
  * api와 worker를 각자의 테스트처럼 따로 세우지 않고, 실제 Postgres와 같은 큐를 사이에 두고
  * 함께 띄운다. 호출은 클라이언트가 쓰는 경로(`@rebomi/api-client` → HTTP) 그대로다.
@@ -48,6 +48,10 @@ const PAGE_HTML = `<!doctype html>
  */
 type PageServer = {
   readonly url: string
+  /** 같은 서버의 다른 경로. */
+  urlFor(path: string): string
+  /** 그 경로로 온 요청 수. */
+  hits(path: string): number
   /** 워커의 요청이 도착할 때까지 기다린다. */
   requested(): Promise<void>
   release(): void
@@ -56,6 +60,7 @@ type PageServer = {
 
 async function startPageServer(): Promise<PageServer> {
   const waiting: ServerResponse[] = []
+  const hits = new Map<string, number>()
   let released = false
   let onRequest: () => void = () => {}
   const requested = new Promise<void>((resolve) => {
@@ -67,7 +72,9 @@ async function startPageServer(): Promise<PageServer> {
     response.end(PAGE_HTML)
   }
 
-  const server: Server = createServer((_request, response) => {
+  const server: Server = createServer((request, response) => {
+    const path = new URL(request.url ?? '/', 'http://page').pathname
+    hits.set(path, (hits.get(path) ?? 0) + 1)
     onRequest()
     if (released) answer(response)
     else waiting.push(response)
@@ -77,6 +84,8 @@ async function startPageServer(): Promise<PageServer> {
 
   return {
     url: `http://${PAGE_ADDRESS}:${port}/article`,
+    urlFor: (path) => `http://${PAGE_ADDRESS}:${port}${path}`,
+    hits: (path) => hits.get(path) ?? 0,
     requested: () => requested,
     release: () => {
       released = true
@@ -224,4 +233,41 @@ it('저장한 URL이 목록에 처리 중으로 보이고, 워커가 처리하�
     extractionLevel: 'full',
     title: PAGE_TITLE,
   })
+})
+
+it('본문과 함께 저장한 콘텐츠는 워커가 페이지를 요청하지 않고 처리를 끝낸다', async () => {
+  // 가져왔다면 PAGE_TITLE 과 다른 본문이 나오는 주소다. 서버는 이미 풀려 있어 바로 답한다.
+  const url = page.urlFor('/members-only')
+
+  const saved = await client.saveContent({
+    url,
+    source: 'extension',
+    title: '확장이 읽은 제목',
+    body: '로그인한 브라우저에서만 보이는 본문이다.',
+    imageUrl: 'https://cdn.example.com/captured.png',
+  })
+
+  expect(saved.status).toBe('created')
+  expect(saved.content).toMatchObject({ metadataStatus: 'pending', extractionLevel: 'full' })
+
+  const after = await waitFor(
+    () => client.getContent(saved.content.id),
+    (content) => content.metadataStatus !== 'pending',
+    30_000,
+  )
+
+  expect(after).toMatchObject({
+    metadataStatus: 'done',
+    extractionLevel: 'full',
+    title: '확장이 읽은 제목',
+    imageUrl: 'https://cdn.example.com/captured.png',
+  })
+  // 완료는 워커가 가져오지 않기로 한 뒤에 기록한다. 이 뒤로 요청이 올 일은 없다.
+  expect(page.hits('/members-only')).toBe(0)
+
+  const [body] = await db.drizzle
+    .select()
+    .from(schema.contentBodies)
+    .where(eq(schema.contentBodies.contentId, saved.content.id))
+  expect(body?.text).toBe('로그인한 브라우저에서만 보이는 본문이다.')
 })
