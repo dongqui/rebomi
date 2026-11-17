@@ -318,3 +318,81 @@ describe('content-process 잡', () => {
     expect(JSON.stringify(logs)).not.toContain(server.origin)
   })
 })
+
+describe('저장한 쪽이 본문을 보낸 콘텐츠 (capture.md §5 본문 추출 우선순위)', () => {
+  /** 확장·모바일이 본문과 함께 저장한 것과 같은 상태를 만든다 (API의 저장 경로와 같다). */
+  async function saveCaptured(
+    path: string,
+    values: Partial<typeof contents.$inferInsert> = {},
+  ): Promise<string> {
+    const id = await saveContent(server.url(path), { extractionLevel: 'full', ...values })
+    await db.drizzle
+      .insert(contentBodies)
+      .values({ contentId: id, text: '로그인 뒤에 보이는 본문' })
+    return id
+  }
+
+  it('페이지를 가져오지 않고 완료가 되며, 보낸 값이 그대로 남는다', async () => {
+    await start()
+    // 가져왔다면 다른 제목·이미지·본문이 나오는 주소다.
+    server.on('/captured', (_request, response) => html(response, ARTICLE_HTML))
+    const id = await saveCaptured('/captured', {
+      title: '확장이 읽은 제목',
+      description: '확장이 읽은 설명',
+      imageUrl: 'https://cdn.example.com/captured.png',
+    })
+
+    const content = await processed(id)
+
+    expect(server.hits('/captured')).toBe(0)
+    expect(content).toMatchObject({
+      title: '확장이 읽은 제목',
+      description: '확장이 읽은 설명',
+      imageUrl: 'https://cdn.example.com/captured.png',
+      extractionLevel: 'full',
+      metadataStatus: 'done',
+      // 본문이 있으니 요약 대상이다.
+      summaryStatus: 'pending',
+    })
+    expect(await bodyOf(id)).toBe('로그인 뒤에 보이는 본문')
+  })
+
+  it('제목·설명·이미지가 비어 있어도 가져오지 않고 빈 채로 둔다', async () => {
+    await start()
+    server.on('/captured-bare', (_request, response) => html(response, ARTICLE_HTML))
+    const id = await saveCaptured('/captured-bare')
+
+    const content = await processed(id)
+
+    expect(server.hits('/captured-bare')).toBe(0)
+    expect(content).toMatchObject({
+      title: null,
+      description: null,
+      imageUrl: null,
+      extractionLevel: 'full',
+      metadataStatus: 'done',
+    })
+  })
+
+  it('가져오면 실패할 주소여도 실패로 기록되지 않는다', async () => {
+    await start()
+    const id = await saveCaptured('/down')
+    const before = server.hits('/down')
+
+    const content = await processed(id)
+
+    expect(server.hits('/down')).toBe(before)
+    expect(content.metadataStatus).toBe('done')
+  })
+
+  it('URL만 저장한 콘텐츠는 지금처럼 가져온다', async () => {
+    await start()
+    server.on('/url-only', (_request, response) => html(response, ARTICLE_HTML))
+    const id = await saveContent(server.url('/url-only'))
+
+    const content = await processed(id)
+
+    expect(server.hits('/url-only')).toBe(1)
+    expect(content).toMatchObject({ title: '다시 만나는 글', extractionLevel: 'full' })
+  })
+})
