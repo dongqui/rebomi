@@ -55,7 +55,7 @@ describe('LoginScreen', () => {
 
     await userEvent.click(await screen.findByText('Google로 로그인'))
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/app'))
     expect(loginRequests(requests)[0]).toMatchObject({
       body: { provider: 'google', idToken: 'google-id-token', session: 'cookie' },
     })
@@ -66,7 +66,7 @@ describe('LoginScreen', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Apple로 로그인' }))
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/app'))
     expect(loginRequests(requests)[0]).toMatchObject({
       body: { provider: 'apple', idToken: 'apple-id-token', session: 'cookie' },
     })
@@ -150,7 +150,7 @@ describe('LoginScreen', () => {
     await screen.findByRole('alert')
     await userEvent.click(screen.getByText('Google로 로그인'))
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/app'))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -162,7 +162,7 @@ describe('LoginScreen', () => {
       </SessionProvider>,
     )
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/app'))
     expect(screen.queryByText('Google로 로그인')).toBeNull()
   })
 

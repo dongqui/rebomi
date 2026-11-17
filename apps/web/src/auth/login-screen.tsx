@@ -20,7 +20,7 @@ export function LoginScreen({ methods }: { methods: LoginMethod[] }) {
 
   // 로그인에 성공했거나 이미 로그인된 상태로 왔으면 앱 화면으로 보낸다.
   useEffect(() => {
-    if (status === 'signed-in') router.replace('/')
+    if (status === 'signed-in') router.replace('/app')
   }, [status, router])
 
   const attempt = useCallback((run: () => Promise<void>) => {
