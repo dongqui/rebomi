@@ -14,7 +14,7 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음. 스타일은 Tailwind CSS 4이고 지금은 랜딩에만 적용돼 있다(§8) |
-| `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
+| `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **로그인 상태만.** 팝업이 웹 로그인을 재사용해 로그인 여부를 보이고 인증된 요청을 보낸다(§3). 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
 | `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
@@ -24,8 +24,8 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
-- **인증: 서버, `api-client`, 웹이 구현됨(§3).** 확장·모바일의 로그인과 토큰 보관은 없다. 콘텐츠 라우트는 `requireAuth`를 지난다.
-- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`은 컴포넌트 테스트(Testing Library + jsdom)가 있고 `fetch`만 가짜로 바꿔 실제 `api-client`를 통과시킨다. `extension`·`mobile`에는 자동 테스트가 없다. E2E 없음.
+- **인증: 서버, `api-client`, 웹, 확장이 구현됨(§3).** 모바일의 로그인과 토큰 보관은 없다. 콘텐츠 라우트는 `requireAuth`를 지난다.
+- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`은 컴포넌트 테스트(Testing Library + jsdom)가 있고 `fetch`만 가짜로 바꿔 실제 `api-client`를 통과시킨다. `extension`도 같은 방식의 팝업 테스트가 있다. `mobile`에는 자동 테스트가 없다. E2E 없음.
 - **CI:** `.github/workflows/ci.yml`이 push·PR마다 Postgres 이미지 빌드 → migrate → lint → typecheck → test → build를 돌린다. 모바일 네이티브 빌드(EAS) 없음.
 - **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다. 예외는 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS`로, 비어 있어도 API는 뜨고 그 제공자의 로그인만 503이다. 웹은 `NEXT_PUBLIC_API_BASE_URL`·`NEXT_PUBLIC_GOOGLE_CLIENT_ID`·`NEXT_PUBLIC_APPLE_CLIENT_ID` 중 하나라도 없으면 dev·build가 실패한다(`next.config.ts`). CI는 두 클라이언트 ID를 자리 채움 값으로 준다.
 - **확인 필요:** 스캐폴드 스펙 9장의 미결(Expo isolated 설치의 네이티브 빌드 동작, @crxjs 유지보수 상태)은 기능 개발 중 실제 빌드로 확인한다. 스캐폴드의 실행 가능 여부는 이 문서 작성 시 다시 실행해 보지 않았다 — README와 CI 구성에 근거한다.
@@ -51,11 +51,11 @@ mobile ────┘                                  │ └→ core
 | --- | --- | --- |
 | Google·Apple 신원 토큰 검증, 계정 생성·조회, 액세스·갱신 토큰 발급·갱신·폐기 | `apps/api` — `routes/auth.ts`, `auth/*`. 외부 인증 서비스를 쓰지 않고 직접 구현한다 | 구현됨 |
 | 요청의 사용자 식별 | `apps/api/src/auth.ts`의 `requireAuth`(`app.requireAuth`). 통과한 요청은 `request.userId`를 가진다 | 구현됨. 콘텐츠 라우트에 적용 |
-| 토큰 보관·전달, 만료 시 자동 갱신 | 각 클라이언트가 `api-client`의 `tokenStore`(`get`/`set`)를 구현 (확장 `chrome.storage`, 모바일 `SecureStore`). 웹은 메모리 + 쿠키 | `api-client`와 웹(`apps/web/src/auth/token-store.ts`) 구현됨. 확장·모바일 저장소 없음 |
+| 토큰 보관·전달, 만료 시 자동 갱신 | 각 클라이언트가 `api-client`의 `tokenStore`(`get`/`set`)를 구현 (모바일 `SecureStore`). 웹과 확장은 메모리 + 웹의 쿠키 | `api-client`와 웹(`apps/web/src/auth/token-store.ts`) 구현됨. 확장·모바일 저장소 없음 |
 | 공유 확장과 메인 앱의 세션 공유 | iOS App Group, Android 공유 저장소 **[원문]** | 없음 |
 | 기기 간 동기화 | 서버가 단일 원본. 클라이언트는 서버 상태를 조회한다 **[제안]** — 오프라인 편집·충돌 해결은 요구되지 않았다 | 없음 |
 
-로그인은 Google·Apple 소셜 로그인이고, 검증된 이메일이 같으면 같은 계정이다. 제품 규칙은 [account](features/account.md) §4에 있다. 확장은 웹 로그인을 재사용한다(account ACC-9) — 재사용 방법(갱신 쿠키 공유 / 웹이 세션을 넘겨줌)과 확장의 토큰 보관은 구현 설계에서 정해 이 절에 기록한다. 모바일의 로그인 흐름과 "동기화"의 반영 시점은 **D-08**로 남아 있다.
+로그인은 Google·Apple 소셜 로그인이고, 검증된 이메일이 같으면 같은 계정이다. 제품 규칙은 [account](features/account.md) §4에 있다. 확장은 웹 로그인을 재사용한다(account ACC-9) — 방법은 아래 "확장의 로그인"에 있다. 모바일의 로그인 흐름과 "동기화"의 반영 시점은 **D-08**로 남아 있다.
 
 **웹의 로그인과 세션 (2026-11-13)** — `apps/web/src/auth/`.
 
@@ -63,7 +63,16 @@ mobile ────┘                                  │ └→ core
 - 액세스 토큰은 메모리에만 둔다. 사용 중에 갱신이 거부되면 `api-client`가 토큰을 지우고, 웹은 토큰 저장소를 구독해 로그아웃 상태로 바꾼다.
 - Google은 Google Identity Services 버튼, Apple은 Sign in with Apple JS 팝업으로 신원 토큰을 받는다. 두 스크립트는 로그인 화면에서 직접 불러오고 npm 의존성은 없다. Google 버튼 방식은 사용자가 창을 닫아 취소해도 신호를 주지 않는다.
 - 로그인 수단은 목록(`LoginMethod[]`)이다. 수단은 자기 버튼을 그리고 `attempt`로 로그인을 실행할 뿐이고, 진행 표시·오류 문구·화면 이동은 로그인 화면이 맡는다. 새 수단(예: 이메일)은 항목 하나로 더한다.
-- 아직 없는 것: nonce 검증, 로그인한 사용자 정보 표시(갱신 응답에 사용자 정보가 없다), 탭 사이의 로그아웃 동기화, 확장으로 세션 넘겨주기(ACC-9).
+- 아직 없는 것: nonce 검증, 로그인한 사용자 정보 표시(갱신 응답에 사용자 정보가 없다), 탭 사이의 로그아웃 동기화.
+
+**확장의 로그인 (2026-11-17)** — `apps/extension/src/auth/`.
+
+- 확장은 로그인하지 않는다. 같은 브라우저에서 웹이 받은 갱신 쿠키(`rebomi_refresh`)를 그대로 쓴다(account ACC-9). `api-client`를 웹과 같은 쿠키 방식으로 만들고, 팝업이 열릴 때 `refresh()`를 한 번 불러 액세스 토큰을 받는다.
+- 확장이 가진 것은 액세스 토큰뿐이고 메모리에만 둔다. 갱신 토큰을 받지도 `chrome.storage`에 쓰지도 않는다. 팝업이 닫히면 토큰도 사라진다.
+- 쿠키가 실리는 조건은 둘이다. 매니페스트의 `host_permissions`에 API 오리진이 있어야 Chrome이 확장 페이지의 요청에 `SameSite=Lax` 쿠키를 붙이고, 확장의 오리진(`chrome-extension://<id>`)이 `CORS_ORIGINS`에 있어야 서버가 쿠키로 온 갱신 요청을 받는다(아니면 403).
+- 로그인돼 있지 않으면(갱신이 401·403) 팝업이 알리고, 버튼이 `VITE_WEB_BASE_URL`의 `/login`을 새 탭으로 연다. 서버에 닿지 못한 경우는 웹처럼 로그아웃과 구분한다.
+- 웹에서 로그아웃하면 쿠키가 지워지고 갱신 토큰이 폐기되므로 확장도 다음에 열 때 로그인이 필요한 상태다. 확장에는 로그아웃이 없다.
+- 아직 없는 것: 팝업 밖(background)에서의 토큰 공유 — 저장 기능이 붙을 때 정한다. 확장 ID 고정(매니페스트 `key`) — 지금은 unpacked 경로에서 생긴 ID를 `CORS_ORIGINS`에 직접 넣는다.
 
 **토큰 (2026-11-11 결정)**
 
@@ -82,8 +91,8 @@ mobile ────┘                                  │ └→ core
 
 | `session` | 쓰는 곳 | 갱신 토큰 |
 | --- | --- | --- |
-| `body`(기본) | 확장, 모바일 | 응답 본문 |
-| `cookie` | 웹 | `rebomi_refresh` 쿠키로만 — `HttpOnly`, `SameSite=Lax`, `Path=/auth`, `Max-Age` 60일, 운영(`NODE_ENV=production`)에서 `Secure`. 본문의 `refreshToken`은 `null` |
+| `body`(기본) | 모바일 | 응답 본문 |
+| `cookie` | 웹 (확장은 로그인하지 않고 웹이 받은 쿠키를 쓴다) | `rebomi_refresh` 쿠키로만 — `HttpOnly`, `SameSite=Lax`, `Path=/auth`, `Max-Age` 60일, 운영(`NODE_ENV=production`)에서 `Secure`. 본문의 `refreshToken`은 `null` |
 
 쿠키 방식은 웹과 API가 같은 사이트(같은 등록 도메인)에 배포되는 것을 전제로 한다. 쿠키로 온 갱신·로그아웃 요청은 `Origin`이 `CORS_ORIGINS`에 있을 때만 받는다(아니면 403).
 

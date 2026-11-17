@@ -17,6 +17,9 @@ export default defineManifest({
   version: '0.1.0',
   description: '저장한 콘텐츠를 잊지 않게 다시 보여준다',
   action: { default_popup: 'src/popup/index.html' },
-  // 저장 기능이 붙을 때 필요한 권한을 그때 추가한다. 지금은 API 오리진만.
+  // 권한은 API 오리진 하나뿐이다. 이것이 있어야 Chrome이 팝업의 요청에 웹의 갱신 쿠키
+  // (SameSite=Lax)를 붙여 준다 — 확장이 웹 로그인을 재사용하는 방법이다(account ACC-9).
+  // 쿠키를 직접 읽지 않으므로 `cookies` 권한은 없고, 토큰을 저장하지 않으므로 `storage` 도
+  // 없다. 로그인 페이지를 새 탭으로 여는 데는 권한이 필요 없다.
   host_permissions: [`${apiBaseUrl.replace(/\/+$/, '')}/*`],
 })
