@@ -13,7 +13,7 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | --- | --- | --- | --- |
 | `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
-| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/`는 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음 |
+| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음. 스타일은 Tailwind CSS 4이고 지금은 랜딩에만 적용돼 있다(§8) |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **골격만.** 팝업이 `/health`를 호출. 권한은 API 오리진뿐. content script·background·저장 UI·본문 추출 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트 하나. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
@@ -202,6 +202,8 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
   - `waitlist_responses`는 `users`와 무관하다. 이메일은 앞뒤 공백을 떼고 소문자로 저장하며 유일하지 않다. 답은 화면 문구가 아닌 고정 키이고(`api-contract`의 `WAITLIST_*`), DB의 check 제약이 같은 목록을 강제한다.
   - 요청 제한: 이 경로에만 IP당 1분 60회(`@fastify/rate-limit`, 메모리 저장 — API 인스턴스가 여럿이면 인스턴스마다 따로 센다). 넘으면 429 `RATE_LIMITED`. 요청 본문은 4KB까지다. 프록시 뒤에 배포할 때는 `TRUST_PROXY=true`로 프록시가 넘긴 주소를 요청자로 본다 — 직접 노출된 서버에서 켜면 주소를 속여 제한을 피할 수 있다.
   - 수집 고지와 보관 기간은 **D-16**(공개 배포 전에 정한다).
+  - **웹의 랜딩 (`apps/web/src/landing/`, 2026-11-17):** `/`는 요청마다 서버에서 그린다 — 언어를 요청의 `Accept-Language`로, 헤드라인을 `?h=`로 정하기 때문이다. 등록 대화상자만 브라우저에서 돌고, 저장 요청은 브라우저가 `api-client`로 API에 직접 보낸다. 응답 ID는 대화상자가 처음 열릴 때 브라우저가 만들어 페이지가 떠 있는 동안만 쥔다(저장소에 두지 않는다). 저장 요청은 한 번에 하나만 보내고, 보내는 중에 답이 바뀌면 끝난 뒤 최신 상태를 한 번 더 보낸다 — 요청마다 답 전체를 싣기 때문에 순서가 바뀌어 도착하면 옛 답이 새 답을 덮는다.
+  - **웹의 최상위 레이아웃은 둘이다.** `(site)`(랜딩)는 Tailwind와 디자인 토큰(`globals.css`, 톤 "웜 페이퍼", 라이트·다크는 기기 설정)을 쓰고, `(product)`(`/login`, `/app`)는 아직 인라인 스타일이라 Tailwind를 불러오지 않는다. 그쪽에 디자인을 입힐 때 합친다. 두 레이아웃 사이를 오가면 페이지 전체를 새로 불러온다.
 
 - 클라이언트 캡처는 로그인·페이월 뒤 본문까지 서버에 저장한다. 캡처 전 안내는 두지 않고, 저장 결과의 추출 수준 표시와 스토어 등록정보·개인정보처리방침으로 알린다([capture](features/capture.md) §5 "본문 저장 고지", 2026-11-13 결정 — 원문 11.8의 사전 안내를 대체).
 - 서버가 가져온 페이지의 원본 HTML은 저장하지 않는다. 추출한 본문 텍스트만 저장하고, 콘텐츠를 지우면 함께 지운다.
@@ -223,7 +225,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | 의미 검색 | pgvector 확장 활성화됨(인덱스·쿼리는 없음) | 임베딩 모델: bge-m3, 대안 multilingual-e5-large. 호스팅 방식 미정 | Phase 2, 한·영 혼합 쿼리 100개 비교 |
 | 결과 결합 | — | RRF | 검색 구현 시 |
 | 요약 LLM | — | "저비용 모델" — 제공자·모델 미정 | 요약 구현 시, 건당 비용 측정 |
-| 웹 | Next.js 16 | — | — |
+| 웹 | Next.js 16, Tailwind CSS 4, Pretendard 가변 글꼴(로컬 파일) | — | — |
 | 확장 | Vite + @crxjs, MV3 | 본문 추출: Readability 계열 라이브러리(미설치) | capture 구현 시 |
 | 모바일 | Expo SDK 58 | iOS Share Extension + App Group, Android Share Intent 구현 방식(Expo config plugin 등) 미정 | capture 구현 시 |
 | 인증 | 직접 구현, Google·Apple 소셜 로그인, 액세스(JWT HS256)+갱신 토큰, `jose`, `@fastify/cookie` (§3) | — | — |
