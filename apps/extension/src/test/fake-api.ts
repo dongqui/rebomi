@@ -63,4 +63,30 @@ export const accessExpired: FakeResponse = {
   body: errorBody('ACCESS_TOKEN_EXPIRED'),
 }
 
-export const emptyList: FakeResponse = { status: 200, body: { items: [], nextCursor: null } }
+/** 저장 응답. 새로 저장했으면 201, 이미 있으면 200이다. */
+export const saved = (
+  status: 'created' | 'duplicate',
+  content: { title?: string | null; extractionLevel?: 'full' | 'partial' | 'metadata_only' } = {},
+): FakeResponse => ({
+  status: status === 'created' ? 201 : 200,
+  body: {
+    status,
+    content: {
+      id: '0b0e7c7e-7b1f-4d0a-9d55-0d6f2f1f6a11',
+      url: 'https://example.com/posts/1?utm_source=x',
+      title: '기사 제목',
+      description: null,
+      domain: 'example.com',
+      imageUrl: null,
+      savedAt: '2026-11-17T03:00:00.000Z',
+      source: 'extension',
+      archiveState: 'inbox',
+      linkState: 'ok',
+      extractionLevel: 'full',
+      summaryStatus: 'pending',
+      metadataStatus: 'pending',
+      resurfacingIncluded: true,
+      ...content,
+    },
+  },
+})
