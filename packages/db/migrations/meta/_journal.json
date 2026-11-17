@@ -36,6 +36,13 @@
       "when": 1794451109568,
       "tag": "0004_content_bodies",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794873259292,
+      "tag": "0005_waitlist_responses",
+      "breakpoints": true
     }
   ]
 }

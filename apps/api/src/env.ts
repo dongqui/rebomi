@@ -25,6 +25,11 @@ const schema = z.object({
   /** 비어 있으면 서버는 뜨지만 그 제공자의 로그인은 503이다. */
   GOOGLE_CLIENT_IDS: commaList,
   APPLE_CLIENT_IDS: commaList,
+  /** 프록시 뒤에 배포할 때만 'true'. 요청 제한이 프록시가 넘긴 주소로 요청자를 가린다. */
+  TRUST_PROXY: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 })
 
 export type Env = z.infer<typeof schema>

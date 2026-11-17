@@ -25,6 +25,8 @@ export const ERROR_CODES = {
   PROVIDER_NOT_CONFIGURED: 'PROVIDER_NOT_CONFIGURED',
   /** 그 경로가 없다. 서버가 404로 낸다. */
   NOT_FOUND: 'NOT_FOUND',
+  /** 짧은 시간에 너무 많이 요청함. 서버가 429로 낸다. 잠시 뒤 다시 보내면 된다. */
+  RATE_LIMITED: 'RATE_LIMITED',
   /** 그 밖의 클라이언트 잘못(415 등). 서버가 해당 4xx로 낸다. */
   BAD_REQUEST: 'BAD_REQUEST',
   /** 요청이 서버에 닿지 못했음. 클라이언트가 만든다. */

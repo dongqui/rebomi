@@ -20,6 +20,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
     "@fastify/cors": "^11.4.1",
+    "@fastify/rate-limit": "^11.2.2",
     "@rebomi/api-contract": "workspace:*",
     "@rebomi/core": "workspace:*",
     "@rebomi/db": "workspace:*",

@@ -13,6 +13,7 @@ import {
   type Content,
   type CreateContentRequest,
   type CreateContentResponse,
+  type SaveWaitlistResponseRequest,
   type HealthResponse,
   type ListContentsQuery,
   type ListContentsResponse,
@@ -97,10 +98,19 @@ export type ApiClient = {
    * 없거나 내 것이 아니거나 휴지통에 있으면 `NOT_FOUND` 코드의 `ApiError` 를 던진다.
    */
   getContent(id: string): Promise<Content>
+  /**
+   * 대기 명단 설문 응답을 저장한다. 로그인이 필요 없고 액세스 토큰을 보내지 않는다.
+   *
+   * `id` 는 호출하는 쪽이 만든 UUID다. 매번 지금까지의 답 전체를 보낸다 — 서버는 없으면
+   * 만들고 있으면 덮어쓴다. 저장된 내용은 돌려받지 않는다.
+   *
+   * 요청이 너무 잦으면 `RATE_LIMITED` 코드의 `ApiError` 를 던진다.
+   */
+  saveWaitlistResponse(id: string, request: SaveWaitlistResponseRequest): Promise<void>
 }
 
 type RequestInitLike = {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT'
   body?: unknown
   /** 액세스 토큰을 붙이고, 만료됐으면 갱신 후 다시 보낸다. */
   authenticated?: boolean
@@ -340,6 +350,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     },
     getContent: (id) =>
       request(`/contents/${encodeURIComponent(id)}`, contentSchema, { authenticated: true }),
+    saveWaitlistResponse: (id, body) =>
+      request(`/waitlist/responses/${encodeURIComponent(id)}`, null, { method: 'PUT', body }),
   }
 }
 

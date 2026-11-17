@@ -89,8 +89,23 @@ describe('마이그레이션 적용', () => {
           'auth_identities',
           'refresh_tokens',
           'content_bodies',
+          'waitlist_responses',
         ]),
       )
+    })
+  }, 60_000)
+
+  it('본문 테이블까지 있는 기존 DB에 적용하면 기존 사용자를 유지한 채 대기 명단 응답 테이블이 생긴다', async () => {
+    await withScratchDatabase(async (pool) => {
+      await migrate(drizzle(pool), { migrationsFolder: migrationsUpTo('0004_content_bodies') })
+      expect(await tableNames(pool)).not.toContain('waitlist_responses')
+      await pool.query(`insert into users (email) values ('existing@example.com')`)
+
+      await migrate(drizzle(pool), { migrationsFolder })
+
+      expect(await tableNames(pool)).toContain('waitlist_responses')
+      const users = await pool.query<{ email: string }>('select email from users')
+      expect(users.rows).toEqual([{ email: 'existing@example.com' }])
     })
   }, 60_000)
 
