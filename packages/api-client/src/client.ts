@@ -99,6 +99,27 @@ export type ApiClient = {
    */
   getContent(id: string): Promise<Content>
   /**
+   * Inbox의 콘텐츠를 보관한다. 바뀐 콘텐츠를 돌려준다. 이미 보관됨이면 그대로 돌려준다.
+   *
+   * 휴지통의 콘텐츠면 `INVALID_STATE_TRANSITION`, 없거나 내 것이 아니면 `NOT_FOUND` 코드의
+   * `ApiError` 를 던진다.
+   */
+  archiveContent(id: string): Promise<Content>
+  /**
+   * 콘텐츠를 휴지통으로 보낸다. 바뀐 콘텐츠를 돌려준다. 이미 휴지통이면 그대로 돌려준다.
+   * 휴지통의 콘텐츠는 `listContents({ archiveState: 'trashed' })` 로만 다시 받는다.
+   *
+   * 없거나 내 것이 아니면 `NOT_FOUND` 코드의 `ApiError` 를 던진다.
+   */
+  trashContent(id: string): Promise<Content>
+  /**
+   * 휴지통의 콘텐츠를 삭제하기 직전 상태(Inbox 또는 보관됨)로 되돌린다. 바뀐 콘텐츠를
+   * 돌려준다. 휴지통이 아니면 그대로 돌려준다.
+   *
+   * 없거나 내 것이 아니면 `NOT_FOUND` 코드의 `ApiError` 를 던진다.
+   */
+  restoreContent(id: string): Promise<Content>
+  /**
    * 대기 명단 설문 응답을 저장한다. 로그인이 필요 없고 액세스 토큰을 보내지 않는다.
    *
    * `id` 는 호출하는 쪽이 만든 UUID다. 매번 지금까지의 답 전체를 보낸다 — 서버는 없으면
@@ -323,6 +344,13 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     }
   }
 
+  /** 보관 상태를 바꾸는 동작. 본문이 없고 바뀐 콘텐츠가 온다. */
+  const contentAction = (id: string, action: 'archive' | 'trash' | 'restore'): Promise<Content> =>
+    request(`/contents/${encodeURIComponent(id)}/${action}`, contentSchema, {
+      method: 'POST',
+      authenticated: true,
+    })
+
   return {
     health: () =>
       request('/health', healthResponseSchema, {
@@ -342,6 +370,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       const params = new URLSearchParams()
       if (query.limit !== undefined) params.set('limit', String(query.limit))
       if (query.cursor !== undefined) params.set('cursor', query.cursor)
+      if (query.archiveState !== undefined) params.set('archiveState', query.archiveState)
+      if (query.sort !== undefined) params.set('sort', query.sort)
       const search = params.toString()
 
       return request(`/contents${search ? `?${search}` : ''}`, listContentsResponseSchema, {
@@ -350,6 +380,9 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     },
     getContent: (id) =>
       request(`/contents/${encodeURIComponent(id)}`, contentSchema, { authenticated: true }),
+    archiveContent: (id) => contentAction(id, 'archive'),
+    trashContent: (id) => contentAction(id, 'trash'),
+    restoreContent: (id) => contentAction(id, 'restore'),
     saveWaitlistResponse: (id, body) =>
       request(`/waitlist/responses/${encodeURIComponent(id)}`, null, { method: 'PUT', body }),
   }

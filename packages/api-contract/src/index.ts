@@ -20,10 +20,12 @@ export {
 } from './auth.js'
 export {
   CONTENT_LIST_DEFAULT_LIMIT,
+  CONTENT_LIST_DEFAULT_SORT,
   CONTENT_LIST_MAX_LIMIT,
   CONTENT_SAVE_LIMITS,
   archiveStateSchema,
   contentJsonSchema,
+  contentListSortSchema,
   contentSchema,
   contentSourceSchema,
   createContentRequestSchema,
@@ -38,6 +40,7 @@ export {
   summaryStatusSchema,
   type ArchiveState,
   type Content,
+  type ContentListSort,
   type ContentSource,
   type CreateContentRequest,
   type CreateContentResponse,

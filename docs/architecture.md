@@ -11,12 +11,12 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
-| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 보관·삭제·복구(`POST /contents/:id/archive`·`/trash`·`/restore`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음. 스타일은 Tailwind CSS 4이고 지금은 랜딩에만 적용돼 있다(§8) |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **원클릭 저장.** 팝업을 열면 웹 로그인을 재사용해(§3) 지금 탭의 제목·설명·대표 이미지·본문을 뽑아 저장하고 결과와 추출 수준을 보인다(§5). 권한은 `activeTab`·`scripting`과 API 오리진. background·상시 content script·단축키·우클릭 메뉴 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
-| `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
+| `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트, 저장 → 보관 → 삭제 → 휴지통 목록 → 복구를 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
 | `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
 | `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`, `saveWaitlistResponse()`(토큰 없이 보낸다). 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
 | `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)·잡 페이로드 타입·재시도 정책(`CONTENT_PROCESS_RETRY`) |
@@ -132,14 +132,23 @@ mobile ────┘                                  │ └→ core
 
 추출한 본문은 `content_bodies(content_id, text, extracted_at)`에 콘텐츠당 하나로 둔다. `contents`와 가른 이유는 크기다 — 목록 질의가 본문을 함께 읽지 않는다. 콘텐츠를 지우면 본문도 지워진다. 본문은 API 응답에 싣지 않는다(검색·요약의 입력이다).
 
+휴지통에 있는 콘텐츠에는 삭제한 시각 `trashed_at`과 삭제하기 직전의 보관 상태 `trashed_from`(`inbox` / `archived`)이 함께 있다. 둘은 휴지통일 때만, 그리고 그때는 반드시 값이 있다(check 제약). 보관 상태 축에 딸린 값이고 계약에는 싣지 않는다 — 삭제한 시각은 휴지통 화면을 만들 때 싣는다.
+
 **[제안] 전이 규칙** — 원문에서 직접 읽히는 것만 적는다. 나머지는 해당 Issue의 설계에서 정하고 이 표에 추가한다.
 
 | 전이 | 조건 |
 | --- | --- |
-| Inbox → 보관됨 | 사용자의 보관 액션, 또는 30일 경과 |
-| Inbox·보관됨 → 휴지통 | 사용자의 삭제 액션 |
-| 휴지통 → 이전 상태 | 삭제 복구 (복구 시 어느 상태로 돌아가는지는 원문에 없다 — 설계에서 결정) |
-| 휴지통 → 영구 삭제 | 30일 경과 |
+| Inbox → 보관됨 | 사용자의 보관 액션(구현됨), 또는 30일 경과(아직 없음) |
+| Inbox·보관됨 → 휴지통 | 사용자의 삭제 액션(구현됨). 삭제한 시각과 삭제 전 상태를 남긴다 |
+| 휴지통 → 삭제하기 직전 상태 | 삭제 복구(구현됨). Inbox에서 지웠으면 Inbox로, 보관됨에서 지웠으면 보관됨으로 돌아간다 (2026-11-18 결정 — 삭제 직후의 "되돌리기"가 삭제 전과 같아야 한다) |
+| 휴지통 → 영구 삭제 | 30일 경과(아직 없음) |
+
+두지 않는 전이: 보관됨 → Inbox(원문에 없다. Inbox는 "새로 저장한 것"이다), 휴지통 → 보관됨(복구를 거친다). 보관 상태를 바꿔도 다른 축은 바뀌지 않는다.
+
+추출 수준과 처리 상태의 전이:
+
+| 전이 | 조건 |
+| --- | --- |
 | 추출 수준 `metadata_only` → `full` (저장 시) | 저장 요청에 본문이 함께 옴. 새 저장이면 처음부터 `full`. 이미 저장한 URL이면 기존이 `metadata_only`일 때만 올리고, 요약 상태가 `no_content`였으면 `pending`으로 돌린다 |
 | 메타데이터 처리 `pending` → `done` | 워커가 페이지를 받아 처리함. 본문을 뽑았으면 추출 수준 `full`, 요약 상태는 `pending` 유지. 본문이 없으면 추출 수준은 그대로(`metadata_only`), 요약 상태 `no_content` |
 | 메타데이터 처리 `pending` → `failed` | 다시 해도 소용없는 오류, 또는 재시도 소진. 요약 상태 `no_content`. 콘텐츠는 남는다 |
@@ -173,8 +182,15 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
   - **추출:** 제목·설명·이미지는 워커와 같은 순서로 고른다. 본문은 문서의 복사본에 Readability를 돌리고(보고 있는 페이지를 고치지 않는다), 결과가 없으면 화면에 보이는 텍스트(`innerText`)로 대체한다 — SNS처럼 기사 구조가 없는 페이지를 위한 것이고 메뉴 같은 잡음이 섞일 수 있다. 화면에 텍스트가 없으면 본문 없이 저장한다. 값은 `CONTENT_SAVE_LIMITS`에 맞춰 잘라 보낸다.
   - **저장할 수 없는 탭:** http(s)가 아닌 탭(브라우저 내부 페이지, 파일)은 이유를 보이고 서버에 보내지 않는다. 스크립트를 넣을 수 없는 http(s) 페이지(Chrome 웹 스토어 등)는 URL과 탭 제목만 저장한다.
   - **결과:** 저장됨 / 이미 저장됨, 제목, 추출 수준을 보인다. 서버에 닿지 못하거나 서버가 거부하면 실패와 다시 시도를 보인다. 요청은 팝업을 한 번 열 때 한 번만 보낸다.
-- **목록 API (`GET /contents`, 구현됨):** 요청한 사용자의 콘텐츠 중 휴지통을 뺀 것을 저장일 최근순으로 준다. `limit`(기본 50, 최대 100)과 `cursor`를 받고 `{ items, nextCursor }`를 준다. 커서는 `(saved_at, id)` 키셋이고 클라이언트에게는 불투명한 문자열이다 — 중간에 새 저장이 끼어도 건너뛰거나 겹치지 않는다. 상태별 필터와 오래된 순 정렬은 아직 없다.
+- **목록 API (`GET /contents`, 구현됨):** 요청한 사용자의 콘텐츠를 저장일순으로 준다. `limit`(기본 50, 최대 100)과 `cursor`를 받고 `{ items, nextCursor }`를 준다. 커서는 `(saved_at, id)` 키셋이고 클라이언트에게는 불투명한 문자열이다 — 중간에 새 저장이 끼어도 건너뛰거나 겹치지 않는다.
+  - **보관 상태 조건 `archiveState`:** `inbox` / `archived` / `trashed` 중 하나를 주면 그 상태만 준다. 생략하면 휴지통을 뺀 전체(Inbox와 보관됨)다. 휴지통은 `trashed`를 지정해야만 온다.
+  - **정렬 `sort`:** 최근순 `recent`(기본) / 오래된 순 `oldest`. 기준은 어느 목록이든 저장일이다(휴지통도 — 삭제한 시각순은 휴지통 화면에서 정한다). 커서는 받은 정렬을 담고 있어, 다른 정렬에 넘기면 400 `VALIDATION_FAILED`다.
 - **단건 조회 API (`GET /contents/:id`, 구현됨):** 요청한 사용자의 콘텐츠 하나를 목록과 같은 모양으로 준다. 없는 ID, 남의 콘텐츠, 휴지통의 콘텐츠, UUID 모양이 아닌 ID는 구분하지 않고 404 `NOT_FOUND`다 — 구분하면 ID가 존재하는지 알려 주게 된다. 클라이언트가 처리 상태를 다시 확인하는 데 쓴다.
+- **보관·삭제·복구 API (`POST /contents/:id/archive` · `/trash` · `/restore`, 구현됨):** 본문 없이 부르고 바뀐 콘텐츠를 받는다. 상태 값을 직접 지정하는 요청은 없다 — 복구가 돌아갈 상태는 서버가 안다. 전이는 §4의 표를 따른다.
+  - **같은 요청의 반복은 오류가 아니다.** 이미 보관됨인 것을 보관, 이미 휴지통인 것을 삭제, 휴지통이 아닌 것을 복구하면 바꾸지 않고 200으로 지금의 콘텐츠를 준다(삭제한 시각도 그대로다). 응답을 받지 못해 다시 보내도 안전하다.
+  - **허용하지 않는 전이**는 휴지통의 콘텐츠를 보관하는 것 하나이고 409 `INVALID_STATE_TRANSITION`이다. 콘텐츠는 바뀌지 않는다.
+  - 없는 ID와 남의 콘텐츠는 단건 조회와 같게 404다. 단, 자기 휴지통의 콘텐츠는 이 경로들로 다룰 수 있다.
+  - 판정은 조건을 건 UPDATE 한 번이다 — 읽고 나서 바꾸지 않으므로 동시에 온 요청이 서로를 덮어쓰지 않는다.
 - **웹의 처리 상태 갱신 (`apps/web/src/library/`):** 저장은 즉시 응답하고 처리는 워커가 나중에 하므로, 웹은 처리 중(`metadataStatus: pending`)인 항목만 3초마다 단건 조회로 다시 확인한다. 처리 중인 항목이 없거나 탭이 숨겨져 있으면 묻지 않는다. 확인에 실패하면 항목을 그대로 두고 다음 차례에 다시 묻고, 404면 목록에서 뺀다. 서버가 변경을 밀어 주는 방식(SSE·웹소켓)은 쓰지 않는다. 목록은 첫 페이지 50개와 "더 보기"다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
 - **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**

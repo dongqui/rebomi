@@ -95,6 +95,49 @@ describe('마이그레이션 적용', () => {
     })
   }, 60_000)
 
+  it('대기 명단까지 있는 기존 DB에 적용하면 휴지통에 있던 콘텐츠에 삭제 시각과 삭제 전 상태가 채워진다', async () => {
+    await withScratchDatabase(async (pool) => {
+      await migrate(drizzle(pool), {
+        migrationsFolder: migrationsUpTo('0005_waitlist_responses'),
+      })
+      const user = await pool.query<{ id: string }>(
+        `insert into users (email) values ('existing@example.com') returning id`,
+      )
+      await pool.query(
+        `insert into contents (user_id, url, normalized_url, domain, source, resurfacing_included, archive_state)
+         values ($1, 'https://example.com/kept', 'https://example.com/kept', 'example.com', 'web', true, 'archived'),
+                ($1, 'https://example.com/gone', 'https://example.com/gone', 'example.com', 'web', true, 'trashed')`,
+        [user.rows[0]!.id],
+      )
+
+      await migrate(drizzle(pool), { migrationsFolder })
+
+      const contents = await pool.query<{
+        url: string
+        archive_state: string
+        has_trashed_at: boolean
+        trashed_from: string | null
+      }>(
+        `select url, archive_state, trashed_at is not null as has_trashed_at, trashed_from
+         from contents order by url`,
+      )
+      expect(contents.rows).toEqual([
+        {
+          url: 'https://example.com/gone',
+          archive_state: 'trashed',
+          has_trashed_at: true,
+          trashed_from: 'inbox',
+        },
+        {
+          url: 'https://example.com/kept',
+          archive_state: 'archived',
+          has_trashed_at: false,
+          trashed_from: null,
+        },
+      ])
+    })
+  }, 60_000)
+
   it('본문 테이블까지 있는 기존 DB에 적용하면 기존 사용자를 유지한 채 대기 명단 응답 테이블이 생긴다', async () => {
     await withScratchDatabase(async (pool) => {
       await migrate(drizzle(pool), { migrationsFolder: migrationsUpTo('0004_content_bodies') })

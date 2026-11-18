@@ -668,6 +668,61 @@ describe('listContents()', () => {
 
     expect(error.code).toBe('UNAUTHORIZED')
   })
+
+  it('보관 상태와 정렬을 쿼리로 보낸다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json({ items: [], nextCursor: null })))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    await client.listContents({ archiveState: 'trashed', sort: 'oldest' })
+
+    const url = new URL(spy.mock.calls[0]![0])
+    expect(url.searchParams.get('archiveState')).toBe('trashed')
+    expect(url.searchParams.get('sort')).toBe('oldest')
+  })
+})
+
+describe.each([
+  ['archiveContent', 'archive', 'archived'],
+  ['trashContent', 'trash', 'trashed'],
+  ['restoreContent', 'restore', 'inbox'],
+] as const)('%s()', (method, path, archiveState) => {
+  it('그 콘텐츠의 동작 경로로 본문 없이 POST하고 바뀐 콘텐츠를 돌려준다', async () => {
+    const changed = { ...CONTENT, archiveState }
+    const spy = stubFetch(() => Promise.resolve(json(changed)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client[method](CONTENT.id)
+
+    expect(result).toEqual(changed)
+    expect(spy.mock.calls[0]?.[0]).toBe(`http://api.test/contents/${CONTENT.id}/${path}`)
+    expect(spy.mock.calls[0]?.[1]?.method).toBe('POST')
+    expect(spy.mock.calls[0]?.[1]?.body).toBeUndefined()
+    expect(bearerOf(spy.mock.calls[0]?.[1])).toBe('Bearer t0ken')
+  })
+
+  it('ID를 경로에 넣을 때 인코딩한다', async () => {
+    const spy = stubFetch(() =>
+      Promise.resolve(json({ error: { code: 'NOT_FOUND', message: '없음' } }, 404)),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client[method]('a/b?c'))
+
+    expect(spy.mock.calls[0]?.[0]).toBe(`http://api.test/contents/a%2Fb%3Fc/${path}`)
+    expect(error.code).toBe('NOT_FOUND')
+  })
+
+  it('허용하지 않는 전이(409)는 INVALID_STATE_TRANSITION 코드의 ApiError로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(json({ error: { code: 'INVALID_STATE_TRANSITION', message: 'x' } }, 409)),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client[method](CONTENT.id))
+
+    expect(error.code).toBe('INVALID_STATE_TRANSITION')
+    expect(error.status).toBe(409)
+  })
 })
 
 describe('saveWaitlistResponse()', () => {

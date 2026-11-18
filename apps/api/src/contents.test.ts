@@ -160,10 +160,61 @@ async function insertContent(
       domain: 'example.com',
       source: 'web',
       resurfacingIncluded: true,
+      // 휴지통의 행은 삭제 시각과 삭제 전 상태가 있어야 한다 (DB 제약).
+      ...(values.archiveState === 'trashed'
+        ? { trashedAt: new Date(), trashedFrom: 'inbox' as const }
+        : {}),
       ...values,
     })
     .returning()
   return row!.id
+}
+
+type ContentAction = 'archive' | 'trash' | 'restore'
+
+const act = (app: FastifyInstance, token: string | null, id: string, action: ContentAction) =>
+  app.inject({
+    method: 'POST',
+    url: `/contents/${id}/${action}`,
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  })
+
+/** 성공해야 하는 동작. 본문을 계약으로 파싱해 돌려준다. */
+async function actOk(
+  app: FastifyInstance,
+  token: string,
+  id: string,
+  action: ContentAction,
+): Promise<Content> {
+  const response = await act(app, token, id, action)
+  expect(response.statusCode).toBe(200)
+  return contentSchema.parse(response.json())
+}
+
+async function rowOf(id: string) {
+  const [row] = await db.drizzle.select().from(schema.contents).where(eq(schema.contents.id, id))
+  return row!
+}
+
+const idsOf = (body: { items: Content[] }): string[] => body.items.map((item) => item.id)
+
+/** 조건을 유지한 채 끝까지 넘겨 받은 ID들과 페이지 수. */
+async function listAll(
+  app: FastifyInstance,
+  token: string,
+  query: string,
+): Promise<{ ids: string[]; pages: number }> {
+  const ids: string[] = []
+  let cursor: string | null = null
+  let pages = 0
+  do {
+    const next: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+    const body = await listOk(app, token, `${query}${next}`)
+    ids.push(...idsOf(body))
+    cursor = body.nextCursor
+    pages += 1
+  } while (cursor !== null && pages < 10)
+  return { ids, pages }
 }
 
 describe('POST /contents', () => {
@@ -840,7 +891,11 @@ describe('GET /contents', () => {
     const app = newApp()
     const user = await newUser()
     const forged = Buffer.from(
-      JSON.stringify(["2026-01-01T00:00:00.000000Z'); drop table contents; --", randomUUID()]),
+      JSON.stringify([
+        'recent',
+        "2026-01-01T00:00:00.000000Z'); drop table contents; --",
+        randomUUID(),
+      ]),
     ).toString('base64url')
 
     const response = await list(app, user.token, `?cursor=${forged}`)
@@ -961,6 +1016,331 @@ describe('GET /contents/:id', () => {
     const raw = JSON.parse(response.body) as Record<string, unknown>
 
     expect(raw).not.toHaveProperty('normalizedUrl')
+    expect(raw).not.toHaveProperty('userId')
+    expect(response.body).not.toContain(user.id)
+  })
+})
+
+describe('GET /contents — 보관 상태와 정렬 (LIB-1)', () => {
+  it('보관 상태를 지정하면 그 상태의 콘텐츠만 준다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const inbox = await insertContent(user.id, 'f-inbox')
+    const archived = await insertContent(user.id, 'f-archived', { archiveState: 'archived' })
+    const trashed = await insertContent(user.id, 'f-trashed', { archiveState: 'trashed' })
+
+    expect(idsOf(await listOk(app, user.token, '?archiveState=inbox'))).toEqual([inbox])
+    expect(idsOf(await listOk(app, user.token, '?archiveState=archived'))).toEqual([archived])
+    expect(idsOf(await listOk(app, user.token, '?archiveState=trashed'))).toEqual([trashed])
+  })
+
+  it('휴지통 목록에도 다른 사용자의 콘텐츠는 나오지 않는다', async () => {
+    const app = newApp()
+    const alice = await newUser()
+    const bob = await newUser()
+    await insertContent(alice.id, 'alice-trashed', { archiveState: 'trashed' })
+
+    expect((await listOk(app, bob.token, '?archiveState=trashed')).items).toEqual([])
+  })
+
+  it('오래된 순으로 주고, 페이지 사이에서 빠지거나 겹치지 않는다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const expected: string[] = []
+    for (let minute = 0; minute < 5; minute += 1) {
+      expected.push(
+        await insertContent(user.id, `old-${minute}`, {
+          savedAt: new Date(Date.UTC(2026, 0, 1, 0, minute)),
+        }),
+      )
+    }
+
+    const { ids, pages } = await listAll(app, user.token, '?sort=oldest&limit=2')
+
+    expect(pages).toBe(3)
+    expect(ids).toEqual(expected)
+  })
+
+  it('sort=recent는 생략한 것과 같은 순서다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    for (let minute = 0; minute < 3; minute += 1) {
+      await insertContent(user.id, `rec-${minute}`, {
+        savedAt: new Date(Date.UTC(2026, 0, 1, 0, minute)),
+      })
+    }
+
+    const explicit = await listAll(app, user.token, '?sort=recent&limit=2')
+
+    expect(explicit.ids).toEqual(idsOf(await listOk(app, user.token)))
+  })
+
+  it('오래된 순에서 저장일이 같은 콘텐츠도 빠지거나 겹치지 않는다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const savedAt = new Date(Date.UTC(2026, 1, 1))
+    const expected: string[] = []
+    for (let n = 0; n < 5; n += 1) {
+      expected.push(await insertContent(user.id, `tie-${n}`, { savedAt }))
+    }
+
+    const { ids } = await listAll(app, user.token, '?sort=oldest&limit=2')
+
+    expect([...ids].sort()).toEqual([...expected].sort())
+  })
+
+  it('보관 상태 조건과 정렬을 함께 쓰면 그 상태 안에서 페이지가 이어진다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const expected: string[] = []
+    for (let minute = 0; minute < 3; minute += 1) {
+      const savedAt = new Date(Date.UTC(2026, 2, 1, 0, minute))
+      expected.push(
+        await insertContent(user.id, `mix-a-${minute}`, { archiveState: 'archived', savedAt }),
+      )
+      await insertContent(user.id, `mix-i-${minute}`, { savedAt })
+    }
+
+    const { ids, pages } = await listAll(
+      app,
+      user.token,
+      '?archiveState=archived&sort=oldest&limit=2',
+    )
+
+    expect(pages).toBe(2)
+    expect(ids).toEqual(expected)
+  })
+
+  it('다른 정렬로 받은 커서는 400 VALIDATION_FAILED다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    for (let n = 0; n < 3; n += 1) await insertContent(user.id, `cross-${n}`)
+    const recent = await listOk(app, user.token, '?limit=1')
+
+    const response = await list(
+      app,
+      user.token,
+      `?sort=oldest&cursor=${encodeURIComponent(recent.nextCursor!)}`,
+    )
+
+    expect(response.statusCode).toBe(400)
+    expect(errorCode(response)).toBe('VALIDATION_FAILED')
+  })
+
+  it.each(['?archiveState=all', '?archiveState=', '?sort=title'])(
+    '잘못된 쿼리 "%s" 는 400 VALIDATION_FAILED다',
+    async (query) => {
+      const app = newApp()
+      const user = await newUser()
+
+      const response = await list(app, user.token, query)
+
+      expect(response.statusCode).toBe(400)
+      expect(errorCode(response)).toBe('VALIDATION_FAILED')
+    },
+  )
+})
+
+describe('POST /contents/:id/archive (LIB-3)', () => {
+  it('Inbox의 콘텐츠를 보관하면 보관됨이 되고 다른 축은 그대로다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'arc-1', {
+      linkState: 'dead',
+      extractionLevel: 'full',
+      summaryStatus: 'done',
+      metadataStatus: 'done',
+      resurfacingIncluded: false,
+    })
+    const before = contentSchema.parse((await getOne(app, user.token, id)).json())
+
+    const after = await actOk(app, user.token, id, 'archive')
+
+    expect(after).toEqual({ ...before, archiveState: 'archived' })
+    expect(await rowOf(id)).toMatchObject({
+      archiveState: 'archived',
+      linkState: 'dead',
+      extractionLevel: 'full',
+      summaryStatus: 'done',
+      metadataStatus: 'done',
+      resurfacingIncluded: false,
+      trashedAt: null,
+      trashedFrom: null,
+    })
+  })
+
+  it('이미 보관됨이면 바꾸지 않고 200으로 답한다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'arc-2', { archiveState: 'archived' })
+
+    expect((await actOk(app, user.token, id, 'archive')).archiveState).toBe('archived')
+  })
+
+  it('휴지통의 콘텐츠는 409 INVALID_STATE_TRANSITION이고 바뀌지 않는다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'arc-3', {
+      archiveState: 'trashed',
+      trashedFrom: 'archived',
+    })
+    const before = await rowOf(id)
+
+    const response = await act(app, user.token, id, 'archive')
+
+    expect(response.statusCode).toBe(409)
+    expect(errorCode(response)).toBe('INVALID_STATE_TRANSITION')
+    expect(await rowOf(id)).toEqual(before)
+  })
+})
+
+describe('POST /contents/:id/trash (LIB-4)', () => {
+  it('삭제한 콘텐츠는 기본 목록과 단건 조회에 나오지 않고 휴지통 목록에 나온다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const kept = await insertContent(user.id, 'tr-kept')
+    const id = await insertContent(user.id, 'tr-1')
+    const started = Date.now()
+
+    const after = await actOk(app, user.token, id, 'trash')
+
+    expect(after.archiveState).toBe('trashed')
+    expect(idsOf(await listOk(app, user.token))).toEqual([kept])
+    expect((await getOne(app, user.token, id)).statusCode).toBe(404)
+    expect(idsOf(await listOk(app, user.token, '?archiveState=trashed'))).toEqual([id])
+    const row = await rowOf(id)
+    expect(row.trashedFrom).toBe('inbox')
+    // DB 시계로 찍는다. 테스트를 돌리는 쪽 시계와 조금 어긋날 수 있다.
+    expect(Math.abs(row.trashedAt!.getTime() - started)).toBeLessThan(60_000)
+  })
+
+  it('보관됨에서 삭제하면 삭제 전 상태가 보관됨으로 남고 다른 축은 그대로다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'tr-2', {
+      archiveState: 'archived',
+      linkState: 'dead',
+      resurfacingIncluded: false,
+    })
+
+    await actOk(app, user.token, id, 'trash')
+
+    expect(await rowOf(id)).toMatchObject({
+      archiveState: 'trashed',
+      trashedFrom: 'archived',
+      linkState: 'dead',
+      resurfacingIncluded: false,
+    })
+  })
+
+  it('이미 휴지통이면 바꾸지 않고 200으로 답한다 — 삭제 시각과 삭제 전 상태가 그대로다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 'tr-3', {
+      archiveState: 'trashed',
+      trashedAt: new Date(Date.UTC(2026, 0, 1)),
+      trashedFrom: 'archived',
+    })
+    const before = await rowOf(id)
+
+    expect((await actOk(app, user.token, id, 'trash')).archiveState).toBe('trashed')
+    expect(await rowOf(id)).toEqual(before)
+  })
+})
+
+describe('POST /contents/:id/restore (LIB-4)', () => {
+  it('복구한 콘텐츠는 휴지통 목록에서 사라지고 기본 목록에 다시 나온다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 're-1')
+    const before = contentSchema.parse((await getOne(app, user.token, id)).json())
+    await actOk(app, user.token, id, 'trash')
+
+    const after = await actOk(app, user.token, id, 'restore')
+
+    expect(after).toEqual(before)
+    expect((await listOk(app, user.token, '?archiveState=trashed')).items).toEqual([])
+    expect(idsOf(await listOk(app, user.token))).toEqual([id])
+    expect((await getOne(app, user.token, id)).statusCode).toBe(200)
+    expect(await rowOf(id)).toMatchObject({
+      archiveState: 'inbox',
+      trashedAt: null,
+      trashedFrom: null,
+    })
+  })
+
+  it('보관됨에서 삭제한 것은 보관됨으로 돌아간다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, 're-2', { archiveState: 'archived' })
+    await actOk(app, user.token, id, 'trash')
+
+    expect((await actOk(app, user.token, id, 'restore')).archiveState).toBe('archived')
+  })
+
+  it.each(['inbox', 'archived'] as const)(
+    '휴지통이 아닌 콘텐츠(%s)는 바꾸지 않고 200으로 답한다',
+    async (archiveState) => {
+      const app = newApp()
+      const user = await newUser()
+      const id = await insertContent(user.id, `re-noop-${archiveState}`, { archiveState })
+
+      expect((await actOk(app, user.token, id, 'restore')).archiveState).toBe(archiveState)
+    },
+  )
+})
+
+describe.each(['archive', 'trash', 'restore'] as const)('POST /contents/:id/%s — 공통', (action) => {
+  it('다른 사용자의 콘텐츠는 404 NOT_FOUND이고 바뀌지 않는다', async () => {
+    const app = newApp()
+    const alice = await newUser()
+    const bob = await newUser()
+    const id = await insertContent(alice.id, `other-${action}`, {
+      archiveState: action === 'restore' ? 'trashed' : 'inbox',
+    })
+    const before = await rowOf(id)
+
+    const response = await act(app, bob.token, id, action)
+
+    expect(response.statusCode).toBe(404)
+    expect(errorCode(response)).toBe('NOT_FOUND')
+    expect(await rowOf(id)).toEqual(before)
+  })
+
+  it.each([randomUUID(), 'not-a-uuid'])('없는 ID "%s" 는 404 NOT_FOUND다', async (id) => {
+    const app = newApp()
+    const user = await newUser()
+
+    const response = await act(app, user.token, id, action)
+
+    expect(response.statusCode).toBe(404)
+    expect(errorCode(response)).toBe('NOT_FOUND')
+  })
+
+  it('인증 없는 요청은 401 UNAUTHORIZED이고 바뀌지 않는다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, `anon-${action}`)
+    const before = await rowOf(id)
+
+    const response = await act(app, null, id, action)
+
+    expect(response.statusCode).toBe(401)
+    expect(errorCode(response)).toBe('UNAUTHORIZED')
+    expect(await rowOf(id)).toEqual(before)
+  })
+
+  it('응답에 계약에 없는 필드가 없다', async () => {
+    const app = newApp()
+    const user = await newUser()
+    const id = await insertContent(user.id, `raw-${action}`)
+
+    const response = await act(app, user.token, id, action)
+    const raw = JSON.parse(response.body) as Record<string, unknown>
+
+    expect(response.statusCode).toBe(200)
+    expect(raw).not.toHaveProperty('trashedAt')
+    expect(raw).not.toHaveProperty('trashedFrom')
     expect(raw).not.toHaveProperty('userId')
     expect(response.body).not.toContain(user.id)
   })
