@@ -188,7 +188,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | 홈 피드 조회, 카드 액션 반영 | `apps/api` |
 | 피드 표시와 액션 UI | `apps/web`, `apps/mobile` |
 | 푸시 발송 | `apps/worker` → 푸시 서비스(미정) → `apps/mobile` |
-| 노출·액션 이벤트 기록(H2 판단 지표) | `apps/api` — 계측 저장 방식은 미정 |
+| 노출·액션 이벤트 기록(H2 판단 지표) | `apps/api` — 계측 저장 방식은 미정(**D-18**) |
 
 선정은 규칙 기반이다(P0). 규칙은 [resurfacing](features/resurfacing.md)에 있다.
 
