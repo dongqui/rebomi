@@ -43,6 +43,13 @@
       "when": 1794873259292,
       "tag": "0005_waitlist_responses",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794976776134,
+      "tag": "0006_content_trash",
+      "breakpoints": true
     }
   ]
 }

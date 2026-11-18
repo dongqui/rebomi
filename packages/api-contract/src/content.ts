@@ -108,6 +108,13 @@ export type CreateContentResponse = z.infer<typeof createContentResponseSchema>
 export const CONTENT_LIST_DEFAULT_LIMIT = 50
 export const CONTENT_LIST_MAX_LIMIT = 100
 
+/** 목록의 정렬: 저장일 최근순 / 오래된 순. */
+export const contentListSortSchema = z.enum(['recent', 'oldest'])
+export type ContentListSort = z.infer<typeof contentListSortSchema>
+
+/** 정렬을 생략했을 때의 순서. */
+export const CONTENT_LIST_DEFAULT_SORT: ContentListSort = 'recent'
+
 /**
  * 콘텐츠 목록 요청의 쿼리. 쿼리 문자열로 오므로 `limit` 은 문자열도 받는다.
  */
@@ -120,15 +127,25 @@ export const listContentsQuerySchema = z.object({
     .default(CONTENT_LIST_DEFAULT_LIMIT),
   /** 이전 응답의 `nextCursor`. 없으면 첫 페이지. */
   cursor: z.string().min(1).max(512).optional(),
+  /**
+   * 이 보관 상태의 콘텐츠만. 생략하면 휴지통을 뺀 전체(Inbox와 보관됨)다 — 휴지통은
+   * `trashed` 를 지정해야만 온다.
+   */
+  archiveState: archiveStateSchema.optional(),
+  /** 저장일 기준 정렬. 생략하면 최근순(`CONTENT_LIST_DEFAULT_SORT`). */
+  sort: contentListSortSchema.optional(),
 })
 
 /** 클라이언트가 넘기는 목록 조건. */
 export type ListContentsQuery = {
   limit?: number
+  /** 같은 `archiveState`·`sort` 로 받은 응답의 `nextCursor` 여야 한다. */
   cursor?: string
+  archiveState?: ArchiveState
+  sort?: ContentListSort
 }
 
-/** 콘텐츠 목록 응답. 휴지통을 뺀 콘텐츠가 저장일 최근순으로 온다. */
+/** 콘텐츠 목록 응답. 조건에 맞는 콘텐츠가 요청한 순서로 온다. */
 export const listContentsResponseSchema = z.object({
   items: z.array(contentSchema),
   /**

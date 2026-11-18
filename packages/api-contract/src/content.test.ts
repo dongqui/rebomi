@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CONTENT_LIST_DEFAULT_SORT,
   CONTENT_SAVE_LIMITS,
+  ERROR_CODES,
   contentJsonSchema,
   contentSchema,
   createContentRequestSchema,
@@ -223,5 +225,32 @@ describe('listContentsQuerySchema', () => {
 
   it('빈 cursor를 거부한다', () => {
     expect(listContentsQuerySchema.safeParse({ cursor: '' }).success).toBe(false)
+  })
+})
+
+describe('listContentsQuerySchema — 보관 상태와 정렬 (LIB-1)', () => {
+  it('정렬을 생략하면 최근순이고 보관 상태 조건은 없다', () => {
+    expect(listContentsQuerySchema.parse({ sort: undefined })).toEqual({ limit: 50 })
+    expect(CONTENT_LIST_DEFAULT_SORT).toBe('recent')
+  })
+
+  it.each(['inbox', 'archived', 'trashed'])('보관 상태 "%s" 를 받는다', (archiveState) => {
+    expect(listContentsQuerySchema.parse({ archiveState })).toEqual({ limit: 50, archiveState })
+  })
+
+  it.each(['recent', 'oldest'])('정렬 "%s" 를 받는다', (sort) => {
+    expect(listContentsQuerySchema.parse({ sort })).toEqual({ limit: 50, sort })
+  })
+
+  it('모르는 보관 상태와 정렬을 거부한다', () => {
+    expect(listContentsQuerySchema.safeParse({ archiveState: 'all' }).success).toBe(false)
+    expect(listContentsQuerySchema.safeParse({ archiveState: '' }).success).toBe(false)
+    expect(listContentsQuerySchema.safeParse({ sort: 'title' }).success).toBe(false)
+  })
+})
+
+describe('에러 코드', () => {
+  it('허용하지 않는 상태 전이의 코드가 있다', () => {
+    expect(ERROR_CODES.INVALID_STATE_TRANSITION).toBe('INVALID_STATE_TRANSITION')
   })
 })

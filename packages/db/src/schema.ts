@@ -35,6 +35,8 @@ export const AUTH_PROVIDERS = ['google', 'apple'] as const
 export const CONTENT_SOURCES = ['extension', 'mobile', 'web', 'import'] as const
 /** 보관 상태: Inbox / 보관됨 / 휴지통. */
 export const ARCHIVE_STATES = ['inbox', 'archived', 'trashed'] as const
+/** 휴지통으로 가기 전의 보관 상태. 복구하면 여기로 돌아간다. */
+export const TRASHED_FROM_STATES = ['inbox', 'archived'] as const
 /** 링크 상태: 정상 / 링크 소멸. 판정 전·일시 실패 값은 D-04 결정 뒤에 추가한다. */
 export const LINK_STATES = ['ok', 'dead'] as const
 /** 추출 수준: 본문 / 일부 / 메타데이터만. */
@@ -75,6 +77,10 @@ export const contents = pgTable(
     imageUrl: text('image_url'),
     source: text('source', { enum: CONTENT_SOURCES }).notNull(),
     archiveState: text('archive_state', { enum: ARCHIVE_STATES }).notNull().default('inbox'),
+    /** 휴지통으로 보낸 시각. 휴지통에 있을 때만 값이 있다. 30일 뒤 영구 삭제의 기준이다. */
+    trashedAt: timestamp('trashed_at', { withTimezone: true }),
+    /** 휴지통으로 가기 전의 보관 상태. 휴지통에 있을 때만 값이 있다. */
+    trashedFrom: text('trashed_from', { enum: TRASHED_FROM_STATES }),
     linkState: text('link_state', { enum: LINK_STATES }).notNull().default('ok'),
     extractionLevel: text('extraction_level', { enum: EXTRACTION_LEVELS })
       .notNull()
@@ -92,6 +98,12 @@ export const contents = pgTable(
     index('contents_user_id_saved_at_idx').on(table.userId, table.savedAt.desc()),
     check('contents_source_check', oneOf(table.source, CONTENT_SOURCES)),
     check('contents_archive_state_check', oneOf(table.archiveState, ARCHIVE_STATES)),
+    check('contents_trashed_from_check', oneOf(table.trashedFrom, TRASHED_FROM_STATES)),
+    // 삭제 시각과 삭제 전 상태는 휴지통에 있을 때만, 그리고 그때는 반드시 있다.
+    check(
+      'contents_trashed_fields_check',
+      sql`(${table.archiveState} = 'trashed') = (${table.trashedAt} is not null) and (${table.archiveState} = 'trashed') = (${table.trashedFrom} is not null)`,
+    ),
     check('contents_link_state_check', oneOf(table.linkState, LINK_STATES)),
     check('contents_extraction_level_check', oneOf(table.extractionLevel, EXTRACTION_LEVELS)),
     check('contents_summary_status_check', oneOf(table.summaryStatus, SUMMARY_STATUSES)),

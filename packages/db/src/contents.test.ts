@@ -100,7 +100,7 @@ describe('contents 테이블', () => {
 
     const [updated] = await db.drizzle
       .update(schema.contents)
-      .set({ archiveState: 'trashed' })
+      .set({ archiveState: 'trashed', trashedAt: new Date(), trashedFrom: 'inbox' })
       .where(eq(schema.contents.id, row!.id))
       .returning()
 
@@ -157,6 +157,46 @@ describe('contents 테이블', () => {
     )
 
     expect(code).toBe('23514')
+  })
+
+  describe('휴지통의 삭제 시각과 삭제 전 상태', () => {
+    const update = (id: string, set: ReturnType<typeof sql>) =>
+      pgCode(db.drizzle.execute(sql`update contents set ${set} where id = ${id}`))
+
+    it('휴지통으로 보내며 둘 다 적으면 받는다', async () => {
+      const userId = await createUser()
+      const [row] = await db.drizzle
+        .insert(schema.contents)
+        .values(contentValues(userId))
+        .returning()
+      expect(row).toMatchObject({ trashedAt: null, trashedFrom: null })
+
+      const code = await update(
+        row!.id,
+        sql`archive_state = 'trashed', trashed_at = now(), trashed_from = 'archived'`,
+      )
+
+      expect(code).toBeUndefined()
+    })
+
+    it.each([
+      ['삭제 시각 없이 휴지통', sql`archive_state = 'trashed', trashed_from = 'inbox'`],
+      ['삭제 전 상태 없이 휴지통', sql`archive_state = 'trashed', trashed_at = now()`],
+      ['휴지통이 아닌데 삭제 시각', sql`trashed_at = now()`],
+      ['휴지통이 아닌데 삭제 전 상태', sql`trashed_from = 'inbox'`],
+      [
+        '삭제 전 상태가 휴지통',
+        sql`archive_state = 'trashed', trashed_at = now(), trashed_from = 'trashed'`,
+      ],
+    ])('%s 은(는) check 제약으로 거부한다', async (_name, set) => {
+      const userId = await createUser()
+      const [row] = await db.drizzle
+        .insert(schema.contents)
+        .values(contentValues(userId))
+        .returning()
+
+      expect(await update(row!.id, set)).toBe('23514')
+    })
   })
 
   it('사용자를 지우면 그 사용자의 콘텐츠도 지워진다', async () => {
