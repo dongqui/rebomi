@@ -50,6 +50,13 @@
       "when": 1794976776134,
       "tag": "0006_content_trash",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794994647777,
+      "tag": "0007_search_indexes",
+      "breakpoints": true
     }
   ]
 }

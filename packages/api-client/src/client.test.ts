@@ -725,6 +725,70 @@ describe.each([
   })
 })
 
+describe('searchContents()', () => {
+  const RESULT = {
+    items: [
+      {
+        content: CONTENT,
+        matches: [{ field: 'title', text: '검색엔진', ranges: [{ start: 0, end: 2 }] }],
+      },
+    ],
+    nextCursor: 'next',
+  }
+
+  it('검색어를 주소가 아니라 본문에 실어 POST하고 결과를 돌려준다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json(RESULT)))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client.searchContents({ query: '검색 postgres' })
+
+    expect(result).toEqual(RESULT)
+    expect(spy.mock.calls[0]?.[0]).toBe('http://api.test/search')
+    expect(spy.mock.calls[0]?.[1]?.method).toBe('POST')
+    expect(JSON.parse(spy.mock.calls[0]?.[1]?.body as string)).toEqual({ query: '검색 postgres' })
+    expect(bearerOf(spy.mock.calls[0]?.[1])).toBe('Bearer t0ken')
+  })
+
+  it('크기와 커서를 함께 보낸다', async () => {
+    const spy = stubFetch(() => Promise.resolve(json({ items: [], nextCursor: null })))
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const result = await client.searchContents({ query: '검색', limit: 10, cursor: 'c' })
+
+    expect(result).toEqual({ items: [], nextCursor: null })
+    expect(JSON.parse(spy.mock.calls[0]?.[1]?.body as string)).toEqual({
+      query: '검색',
+      limit: 10,
+      cursor: 'c',
+    })
+  })
+
+  it('거부된 검색어(400)는 VALIDATION_FAILED 코드의 ApiError로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(json({ error: { code: 'VALIDATION_FAILED', message: 'x' } }, 400)),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client.searchContents({ query: '' }))
+
+    expect(error.code).toBe('VALIDATION_FAILED')
+    expect(error.status).toBe(400)
+  })
+
+  it('근거의 모양이 계약과 다르면 MALFORMED_RESPONSE로 던진다', async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        json({ items: [{ content: CONTENT, matches: [{ field: 'title' }] }], nextCursor: null }),
+      ),
+    )
+    const client = createApiClient({ baseUrl: 'http://api.test', tokenStore: storeWith('t0ken') })
+
+    const error = await caught(client.searchContents({ query: '검색' }))
+
+    expect(error.code).toBe('MALFORMED_RESPONSE')
+  })
+})
+
 describe('saveWaitlistResponse()', () => {
   const ID = '0b0e7c7e-7b1f-4d0a-9d55-0d6f2f1f6a11'
   const ANSWERS: SaveWaitlistResponseRequest = {

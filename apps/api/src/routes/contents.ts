@@ -37,7 +37,7 @@ function textOrNull(value: string | undefined): string | null {
  * DB 행을 계약의 콘텐츠로 옮긴다. `normalizedUrl`·`userId` 같은 내부 값은 싣지 않는다.
  * 값 목록이 db와 계약에서 어긋나면 여기서 타입 오류가 난다 (architecture.md §4).
  */
-function toContent(row: ContentRow): Content {
+export function toContent(row: ContentRow): Content {
   return {
     id: row.id,
     url: row.url,

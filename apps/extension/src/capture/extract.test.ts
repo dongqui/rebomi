@@ -101,7 +101,8 @@ describe('extractPage', () => {
     expect(result.title).toHaveLength(CONTENT_SAVE_LIMITS.title)
     expect(result.description).toHaveLength(CONTENT_SAVE_LIMITS.description)
     expect(result.body).toHaveLength(CONTENT_SAVE_LIMITS.body)
-  })
+    // 문단 5,000개를 파싱한다. CI에서는 기본 제한(5초)을 넘기도 한다.
+  }, 30_000)
 
   it.each([
     ['data: 주소', 'data:image/png;base64,AAAA'],
