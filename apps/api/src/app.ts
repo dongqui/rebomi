@@ -8,6 +8,7 @@ import type { JobQueue } from './jobs.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerContentRoutes } from './routes/contents.js'
 import { registerHealthRoute } from './routes/health.js'
+import { registerSearchRoutes } from './routes/search.js'
 import { registerWaitlistRoutes } from './routes/waitlist.js'
 
 export type BuildAppDeps = {
@@ -45,6 +46,7 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
   registerHealthRoute(app, deps.db)
   registerAuthRoutes(app, { db: deps.db, auth: deps.auth, allowedOrigins: deps.corsOrigins })
   registerContentRoutes(app, { db: deps.db, jobs: deps.jobs })
+  registerSearchRoutes(app, { db: deps.db })
   registerWaitlistRoutes(app, { db: deps.db })
 
   return app

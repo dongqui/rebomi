@@ -59,6 +59,24 @@ export {
   type HealthResponse,
 } from './health.js'
 export {
+  SEARCH_DEFAULT_LIMIT,
+  SEARCH_MAX_LIMIT,
+  SEARCH_MAX_TERMS,
+  SEARCH_QUERY_MAX_LENGTH,
+  searchMatchFieldSchema,
+  searchMatchSchema,
+  searchRequestSchema,
+  searchResponseJsonSchema,
+  searchResponseSchema,
+  searchResultSchema,
+  searchTermsOf,
+  type SearchMatch,
+  type SearchMatchField,
+  type SearchRequest,
+  type SearchResponse,
+  type SearchResult,
+} from './search.js'
+export {
   WAITLIST_EMAIL_MAX_LENGTH,
   WAITLIST_HEADLINES,
   WAITLIST_LOCALES,

@@ -11,16 +11,16 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 
 | 경로 | 역할 | 기술 | 현재 상태 |
 | --- | --- | --- | --- |
-| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 보관·삭제·복구(`POST /contents/:id/archive`·`/trash`·`/restore`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
+| `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 보관·삭제·복구(`POST /contents/:id/archive`·`/trash`·`/restore`), 키워드 검색(`POST /search`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음. 스타일은 Tailwind CSS 4이고 지금은 랜딩에만 적용돼 있다(§8) |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **원클릭 저장.** 팝업을 열면 웹 로그인을 재사용해(§3) 지금 탭의 제목·설명·대표 이미지·본문을 뽑아 저장하고 결과와 추출 수준을 보인다(§5). 권한은 `activeTab`·`scripting`과 API 오리진. background·상시 content script·단축키·우클릭 메뉴 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트, 저장 → 보관 → 삭제 → 휴지통 목록 → 복구를 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
-| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
-| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`, `saveWaitlistResponse()`(토큰 없이 보낸다). 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
+| `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 검색 요청/응답(매칭 근거 포함) 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
+| `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`, `archiveContent()`·`trashContent()`·`restoreContent()`, `searchContents()`, `saveWaitlistResponse()`(토큰 없이 보낸다). 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
 | `packages/core` | 순수 도메인 로직 | — | **구현됨(범위 작음).** `normalizeUrl`(트래킹 파라미터 제거·정규화), `domainOf`, 큐 이름(`QUEUES`)·잡 페이로드 타입·재시도 정책(`CONTENT_PROCESS_RETRY`) |
-| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`·`content_bodies`(§4), `waitlist_responses`(§8) 테이블, PGroonga·pgvector 확장 활성화 |
+| `packages/db` | Drizzle 스키마·마이그레이션 | Drizzle 0.45, pg | **골격만.** `users(id, email, created_at)`, `auth_identities`·`refresh_tokens`(§3), `contents`·`content_bodies`(§4), `waitlist_responses`(§8) 테이블, 키워드 검색용 PGroonga 인덱스 2개(§5), PGroonga·pgvector 확장 활성화 |
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
@@ -193,6 +193,15 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
   - 판정은 조건을 건 UPDATE 한 번이다 — 읽고 나서 바꾸지 않으므로 동시에 온 요청이 서로를 덮어쓰지 않는다.
 - **웹의 처리 상태 갱신 (`apps/web/src/library/`):** 저장은 즉시 응답하고 처리는 워커가 나중에 하므로, 웹은 처리 중(`metadataStatus: pending`)인 항목만 3초마다 단건 조회로 다시 확인한다. 처리 중인 항목이 없거나 탭이 숨겨져 있으면 묻지 않는다. 확인에 실패하면 항목을 그대로 두고 다음 차례에 다시 묻고, 404면 목록에서 뺀다. 서버가 변경을 밀어 주는 방식(SSE·웹소켓)은 쓰지 않는다. 목록은 첫 페이지 50개와 "더 보기"다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
+- **키워드 검색 API (`POST /search`, 구현됨):** 요청한 사용자의 콘텐츠를 키워드로 찾는다. 지금 대상은 제목, URL·도메인, 설명, 추출된 본문이다 — 요약과 메모는 그 컬럼이 생길 때 넣고, 의미 검색과 RRF 결합은 아직 없다.
+  - **요청은 본문으로 보낸다:** `{ query, limit?, cursor? }`. 조회지만 POST다 — 검색어를 주소에 실으면 서버 로그와 프록시에 남는다.
+  - **검색어:** 앞뒤 공백을 뗀 뒤 1~200자, 공백으로 나눈 단어는 10개까지다. 넘거나 비면 400 `VALIDATION_FAILED`다. 단어가 **모두** 들어 있는 콘텐츠만 결과다. 단어마다 어느 대상에 있어도 된다. `OR`·`-`·따옴표 같은 검색 문법은 없고 글자 그대로 찾는다. 단어의 일부로도 찾고(한국어·영어 모두), 대소문자와 전각·반각을 가리지 않는다.
+  - **범위:** 휴지통은 빠지고 Inbox와 보관됨이 대상이다. 남의 콘텐츠는 나오지 않는다(§3).
+  - **응답:** `{ items: [{ content, matches }], nextCursor }`. `content`는 목록과 같은 모양이다. `matches`는 일치한 곳마다 `{ field, text, ranges }`다 — `field`는 `title`/`url`/`description`/`body`(도메인 일치는 `url`), `text`는 HTML이 아닌 글(본문은 일치한 곳 주변의 조각으로 2개까지, 나머지는 값 전체), `ranges`는 `text` 안의 일치 구간(`start`부터 `end` 앞까지, UTF-16 위치)이다. 화면이 그 구간을 강조한다. 일치가 없으면 `items`가 빈 배열이다.
+  - **정렬:** 관련도순이다. 단어마다 제목 일치를 가장 높게, 그다음 설명·주소·도메인, 그다음 본문으로 점수를 더한다. 점수가 같으면 최근 저장이 먼저다.
+  - **페이지:** `limit` 기본 20, 최대 50. 커서는 "몇 번째부터"를 담은 불투명한 값이다(최대 10,000번째). 관련도순에는 키셋으로 삼을 고정된 기준이 없어서다 — 페이지 사이에 새 콘텐츠가 저장되면 한 항목이 겹칠 수 있다.
+  - **인덱스:** PGroonga 인덱스 둘 — `contents_search_idx`(제목·설명·URL·도메인을 한 배열로)와 `content_bodies_search_idx`(본문). 토크나이저는 알파벳·숫자·기호를 단어로 묶지 않는 N-gram, 정규화는 `NormalizerNFKC150`이다. Drizzle 스키마로 표현할 수 없어 마이그레이션 `0007_search_indexes`에 직접 쓴 SQL로 있다. 인덱스는 사용자별로 나뉘어 있지 않다 — 일치를 찾은 뒤 사용자로 거른다.
+  - **엔진에 묶인 SQL은 `apps/api/src/search/keyword.ts` 한 파일에만 있다.** 경로(`routes/search.ts`)는 그 함수의 입력과 결과만 본다. Phase 2 평가에서 엔진을 바꾸면 그 파일만 바꾼다.
 - **링크 소멸 콘텐츠는 요약·임베딩을 건너뛴다.** **[원문 4.1]**
 
 ## 6. 재노출의 책임
@@ -252,7 +261,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | DB·ORM | PostgreSQL, Drizzle | — | — |
 | 잡 큐 | pg-boss | — | 교체 지점은 `apps/worker` 내부 |
 | 서버 본문 추출 | `@mozilla/readability` + `linkedom` (규칙 기반) | AI 추출 보완 | H4(서버 추출 성공률) 측정 뒤 |
-| 키워드 검색 | PGroonga 확장 활성화됨(인덱스·쿼리는 없음) | 대안 pg_bigm | Phase 2 평가 |
+| 키워드 검색 | PGroonga로 구현됨(인덱스·쿼리, §5). 엔진 확정은 아니다 | 대안 pg_bigm | Phase 2 평가 |
 | 의미 검색 | pgvector 확장 활성화됨(인덱스·쿼리는 없음) | 임베딩 모델: bge-m3, 대안 multilingual-e5-large. 호스팅 방식 미정 | Phase 2, 한·영 혼합 쿼리 100개 비교 |
 | 결과 결합 | — | RRF | 검색 구현 시 |
 | 요약 LLM | — | "저비용 모델" — 제공자·모델 미정 | 요약 구현 시, 건당 비용 측정 |

@@ -58,6 +58,9 @@ const oneOf = (column: AnyPgColumn, values: readonly string[]): SQL =>
  *
  * 본문은 `content_bodies` 에 따로 둔다. 요약·임베딩·메모·가져온 폴더 컬럼은 각 기능의
  * Issue에서 추가한다.
+ *
+ * 키워드 검색 인덱스(`contents_search_idx`, `content_bodies_search_idx`)는 PGroonga
+ * 인덱스라 여기 적을 수 없다. 마이그레이션 `0007_search_indexes` 에 직접 쓴 SQL로 있다.
  */
 export const contents = pgTable(
   'contents',

@@ -95,6 +95,57 @@ describe('마이그레이션 적용', () => {
     })
   }, 60_000)
 
+  it('휴지통 컬럼까지 있는 기존 DB에 적용하면 이미 있던 콘텐츠와 본문이 검색 인덱스에 들어간다', async () => {
+    await withScratchDatabase(async (pool) => {
+      await migrate(drizzle(pool), { migrationsFolder: migrationsUpTo('0006_content_trash') })
+      const user = await pool.query<{ id: string }>(
+        `insert into users (email) values ('existing@example.com') returning id`,
+      )
+      const content = await pool.query<{ id: string }>(
+        `insert into contents (user_id, url, normalized_url, domain, source, resurfacing_included, title)
+         values ($1, 'https://example.com/a', 'https://example.com/a', 'example.com', 'web', true, '검색엔진을 만드는 방법')
+         returning id`,
+        [user.rows[0]!.id],
+      )
+      await pool.query(`insert into content_bodies (content_id, text) values ($1, $2)`, [
+        content.rows[0]!.id,
+        'Building a search engine with Postgres',
+      ])
+
+      await migrate(drizzle(pool), { migrationsFolder })
+
+      const indexes = await pool.query<{ indexname: string }>(
+        `select indexname from pg_indexes where schemaname = 'public' and indexdef like '%pgroonga%'`,
+      )
+      expect(indexes.rows.map((row) => row.indexname).sort()).toEqual([
+        'content_bodies_search_idx',
+        'contents_search_idx',
+      ])
+
+      // 순차 검색으로도 같은 결과가 나오므로, 인덱스를 거치게 해서 확인한다.
+      const client = await pool.connect()
+      try {
+        await client.query('set enable_seqscan = off')
+        const byTitle = await client.query(
+          `select id from contents where array[title, description, url, domain] &@ '엔진'`,
+        )
+        const byBody = await client.query(
+          `select content_id from content_bodies where text &@ 'engin'`,
+        )
+        const plan = await client.query<{ 'QUERY PLAN': string }>(
+          `explain select id from contents where array[title, description, url, domain] &@ '엔진'`,
+        )
+        expect(byTitle.rows).toEqual([{ id: content.rows[0]!.id }])
+        expect(byBody.rows).toEqual([{ content_id: content.rows[0]!.id }])
+        expect(plan.rows.map((row) => row['QUERY PLAN']).join('\n')).toContain(
+          'contents_search_idx',
+        )
+      } finally {
+        client.release()
+      }
+    })
+  }, 60_000)
+
   it('대기 명단까지 있는 기존 DB에 적용하면 휴지통에 있던 콘텐츠에 삭제 시각과 삭제 전 상태가 채워진다', async () => {
     await withScratchDatabase(async (pool) => {
       await migrate(drizzle(pool), {

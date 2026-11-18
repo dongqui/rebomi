@@ -8,6 +8,7 @@ import {
   listContentsResponseSchema,
   loginResponseSchema,
   refreshResponseSchema,
+  searchResponseSchema,
   type AuthProvider,
   type AuthUser,
   type Content,
@@ -17,6 +18,8 @@ import {
   type HealthResponse,
   type ListContentsQuery,
   type ListContentsResponse,
+  type SearchRequest,
+  type SearchResponse,
   type SessionMode,
 } from '@rebomi/api-contract'
 import type { ZodType } from 'zod'
@@ -119,6 +122,18 @@ export type ApiClient = {
    * 없거나 내 것이 아니면 `NOT_FOUND` 코드의 `ApiError` 를 던진다.
    */
   restoreContent(id: string): Promise<Content>
+  /**
+   * 내 콘텐츠를 키워드로 찾는다. 검색어를 공백으로 나눈 단어가 모두 들어 있는 콘텐츠가
+   * 관련도순으로 온다. 대상은 제목, 주소·도메인, 설명, 본문이고 휴지통은 빠진다.
+   *
+   * 결과마다 일치한 곳(`matches`)이 온다 — `text` 의 `ranges` 구간을 강조해 보여준다.
+   * 일치가 없으면 `items` 가 빈 배열이다. 다음 페이지는 같은 검색어에 응답의 `nextCursor` 를
+   * `cursor` 로 넘긴다.
+   *
+   * 검색어가 비었거나 상한(`SEARCH_QUERY_MAX_LENGTH`, `SEARCH_MAX_TERMS`)을 넘으면
+   * `VALIDATION_FAILED` 코드의 `ApiError` 를 던진다.
+   */
+  searchContents(request: SearchRequest): Promise<SearchResponse>
   /**
    * 대기 명단 설문 응답을 저장한다. 로그인이 필요 없고 액세스 토큰을 보내지 않는다.
    *
@@ -383,6 +398,9 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     archiveContent: (id) => contentAction(id, 'archive'),
     trashContent: (id) => contentAction(id, 'trash'),
     restoreContent: (id) => contentAction(id, 'restore'),
+    // 검색어는 주소가 아니라 본문으로 보낸다 — 주소는 서버 로그에 남는다.
+    searchContents: (body) =>
+      request('/search', searchResponseSchema, { method: 'POST', body, authenticated: true }),
     saveWaitlistResponse: (id, body) =>
       request(`/waitlist/responses/${encodeURIComponent(id)}`, null, { method: 'PUT', body }),
   }
