@@ -401,8 +401,12 @@ function Progress({
   )
 }
 
+/**
+ * 입력란. 공통 포커스 링(바깥으로 2px 띄운 파란 선)은 입력란의 테두리와 겹쳐 두 겹으로 보여서,
+ * 포커스가 오면 테두리 자리에 먹색 선 한 겹만 그린다 (디자인).
+ */
 const field =
-  'h-[52px] w-full rounded-[14px] border border-muted bg-bg px-4 text-[17px] text-strong placeholder:text-muted'
+  'h-[52px] w-full rounded-[14px] border border-muted bg-bg px-4 text-[17px] text-strong placeholder:text-muted focus-visible:rounded-[14px] focus-visible:border-transparent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-strong'
 
 /**
  * 하나만 고르는 질문. 고르면 넘어가고, "기타"를 고르면 직접 적는 칸과 "다음"이 나온다.
