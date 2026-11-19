@@ -40,30 +40,33 @@ export function LoginScreen({ methods }: { methods: LoginMethod[] }) {
   const fail = useCallback((reason: string) => setMessage(reason), [])
 
   return (
-    <main style={{ maxWidth: '20rem', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.5rem' }}>Rebomi 로그인</h1>
+    // 로그인 화면에는 아직 디자인을 입히지 않았다 (`rb-plain`).
+    <div className="rb-plain">
+      <main style={{ maxWidth: '20rem', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '1.5rem' }}>Rebomi 로그인</h1>
 
-      {(status === 'checking' || status === 'signed-in') && <p>확인 중…</p>}
+        {(status === 'checking' || status === 'signed-in') && <p>확인 중…</p>}
 
-      {status === 'unreachable' && <ConnectionError onRetry={retry} />}
+        {status === 'unreachable' && <ConnectionError onRetry={retry} />}
 
-      {status === 'signed-out' && (
-        <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {methods.map(({ id, Component }) => (
-              <Component key={id} disabled={busy} attempt={attempt} fail={fail} />
-            ))}
-          </div>
+        {status === 'signed-out' && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {methods.map(({ id, Component }) => (
+                <Component key={id} disabled={busy} attempt={attempt} fail={fail} />
+              ))}
+            </div>
 
-          {busy && <p>로그인하는 중…</p>}
+            {busy && <p>로그인하는 중…</p>}
 
-          {message !== null && (
-            <p role="alert" style={{ color: '#b00' }}>
-              {message}
-            </p>
-          )}
-        </>
-      )}
-    </main>
+            {message !== null && (
+              <p role="alert" style={{ color: '#b00' }}>
+                {message}
+              </p>
+            )}
+          </>
+        )}
+      </main>
+    </div>
   )
 }

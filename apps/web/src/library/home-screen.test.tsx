@@ -1,9 +1,22 @@
 import type { Content } from '@rebomi/api-contract'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
-import { errorBody, fakeApi, type FakeRequest, type FakeResponse } from '@/test/fake-api'
-import { LibraryScreen } from './library-screen'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SessionProvider } from '@/auth/session'
+import type { Locale } from '@/lib/locale'
+import { AppShell } from '@/shell/app-shell'
+import { LocaleProvider } from '@/shell/locale-context'
+import { errorBody, fakeApi, refreshed, type FakeRequest, type FakeResponse } from '@/test/fake-api'
+import { HomeScreen } from './home-screen'
+import { LibraryProvider } from './library-provider'
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/app',
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
+/** 화면이 "지금"으로 삼는 시각. 아래 `content()` 의 저장 시각에서 30초 뒤다. */
+const NOW = new Date('2026-11-13T06:00:30.000Z')
 
 let nextId = 0
 
@@ -16,7 +29,6 @@ function content(overrides: Partial<Content> = {}): Content {
     description: null,
     domain: 'example.com',
     imageUrl: null,
-    // 어느 시간대에서 돌려도 같은 날짜로 보이는 시각.
     savedAt: '2026-11-13T06:00:00.000Z',
     source: 'web',
     archiveState: 'inbox',
@@ -42,9 +54,13 @@ const page = (items: Content[], nextCursor: string | null = null): FakeResponse 
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** 로그인된 상태(액세스 토큰 있음)의 화면. 폴링 간격은 테스트가 기다릴 수 있게 짧다. */
-async function setup(routes: Routes) {
+/**
+ * 로그인된 상태의 앱 틀 + 홈. 폴링 간격은 테스트가 기다릴 수 있게 짧다.
+ * `narrow` 면 좁은 화면(860px 이하)이다.
+ */
+async function setup(routes: Routes, options: { locale?: Locale; narrow?: boolean } = {}) {
   const fake = fakeApi((request) => {
+    if (request.path === '/auth/refresh') return refreshed
     if (request.path === '/contents' && request.method === 'GET') {
       return routes.list ? routes.list(request) : page([])
     }
@@ -59,9 +75,29 @@ async function setup(routes: Routes) {
   })
   await fake.tokens.set({ accessToken: 'access-1', refreshToken: null })
 
-  render(<LibraryScreen client={fake.api} pollMs={20} />)
+  if (options.narrow) {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+  }
+
+  render(
+    <LocaleProvider locale={options.locale ?? 'ko'}>
+      <SessionProvider client={fake.api} tokens={fake.tokens}>
+        <LibraryProvider client={fake.api} pollMs={20}>
+          <AppShell>
+            <HomeScreen now={() => NOW} />
+          </AppShell>
+        </LibraryProvider>
+      </SessionProvider>
+    </LocaleProvider>,
+  )
   return fake
 }
+
+const FIRST_USE = '저장한 콘텐츠가 아직 없어요'
 
 const rows = () => screen.queryAllByRole('listitem')
 const saves = (requests: FakeRequest[]) =>
@@ -71,9 +107,13 @@ const lists = (requests: FakeRequest[]) =>
 const polls = (requests: FakeRequest[]) =>
   requests.filter((request) => request.path.startsWith('/contents/'))
 
-const addressInput = () => screen.getByLabelText<HTMLInputElement>('저장할 주소')
+const addressInput = () => screen.getByLabelText<HTMLInputElement>('링크 주소')
 
+/** 링크 저장 대화상자를 열고(이미 열려 있으면 그대로) 주소를 넣어 저장한다. */
 async function save(url: string) {
+  if (screen.queryByRole('dialog') === null) {
+    await userEvent.click(screen.getByRole('button', { name: '링크 저장' }))
+  }
   await userEvent.clear(addressInput())
   if (url) await userEvent.type(addressInput(), url)
   await userEvent.click(screen.getByRole('button', { name: '저장' }))
@@ -85,10 +125,12 @@ function setHidden(hidden: boolean) {
 
 afterEach(() => {
   setHidden(false)
+  delete document.documentElement.dataset.theme
+  window.localStorage.clear()
 })
 
 describe('목록', () => {
-  it('항목마다 제목, 도메인, 저장일, 추출 수준, 처리 상태를 보여준다', async () => {
+  it('항목마다 제목, 출처, 저장일, 추출 수준을 보여준다', async () => {
     await setup({
       list: () => page([content({ title: '읽을 글', extractionLevel: 'full' })]),
     })
@@ -96,9 +138,10 @@ describe('목록', () => {
     const row = within(await screen.findByRole('listitem'))
     expect(row.getByText('읽을 글')).toBeDefined()
     expect(row.getByText('example.com')).toBeDefined()
-    expect(row.getByText('2026. 11. 13.')).toBeDefined()
-    expect(row.getByText('본문')).toBeDefined()
-    expect(row.getByText('완료')).toBeDefined()
+    expect(row.getByText('방금')).toBeDefined()
+    expect(row.getByText('본문 확보')).toBeDefined()
+    // 처리가 끝난 항목에는 처리 상태를 따로 보이지 않는다.
+    expect(row.queryByText('처리 중')).toBeNull()
   })
 
   it('추출 수준과 처리 상태를 값마다 다른 말로 보여준다', async () => {
@@ -111,10 +154,10 @@ describe('목록', () => {
     })
 
     const [first, second] = await screen.findAllByRole('listitem')
-    expect(within(first!).getByText('일부')).toBeDefined()
+    expect(within(first!).getByText('본문 일부')).toBeDefined()
     expect(within(first!).getByText('처리 중')).toBeDefined()
     expect(within(second!).getByText('메타데이터만')).toBeDefined()
-    expect(within(second!).getByText('실패')).toBeDefined()
+    expect(within(second!).getByText('페이지 정보를 가져오지 못했어요')).toBeDefined()
   })
 
   it('제목이 아직 없으면 주소를 대신 보여준다', async () => {
@@ -123,24 +166,40 @@ describe('목록', () => {
     })
 
     const row = within(await screen.findByRole('listitem'))
-    expect(row.getByRole('link', { name: 'https://example.com/untitled' })).toBeDefined()
+    expect(row.getByText('https://example.com/untitled')).toBeDefined()
   })
 
-  it('저장한 것이 없으면 비어 있다고 알린다', async () => {
+  it('원문이 새 탭으로 열린다', async () => {
+    await setup({
+      list: () => page([content({ title: '읽을 글', url: 'https://example.com/read' })]),
+    })
+
+    const link = await screen.findByRole<HTMLAnchorElement>('link', { name: '원문 보기: 읽을 글' })
+    expect(link.href).toBe('https://example.com/read')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('저장한 것이 없으면 빈 목록이 아니라 첫 사용 안내를 보이고, 거기서 링크 저장을 연다', async () => {
     await setup({ list: () => page([]) })
 
-    expect(await screen.findByText('아직 저장한 콘텐츠가 없습니다.')).toBeDefined()
+    expect(await screen.findByRole('heading', { name: FIRST_USE })).toBeDefined()
+    expect(screen.queryByRole('heading', { name: '최근 저장' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '링크 저장하기' }))
+
+    expect(screen.getByRole('dialog', { name: '링크 저장하기' })).toBeDefined()
+    expect(document.activeElement).toBe(addressInput())
   })
 
   it('API에 닿지 못하면 빈 목록이 아니라 오류를 보여주고, 다시 시도하면 불러온다', async () => {
     let online = false
     await setup({ list: () => (online ? page([content({ title: '돌아온 글' })]) : 'offline') })
 
-    expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결할 수 없습니다')
-    expect(screen.queryByText('아직 저장한 콘텐츠가 없습니다.')).toBeNull()
+    expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결할 수 없어요')
+    expect(screen.queryByText(FIRST_USE)).toBeNull()
 
     online = true
-    await userEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    await userEvent.click(screen.getByRole('button', { name: '다시 시도하기' }))
 
     expect(await screen.findByText('돌아온 글')).toBeDefined()
     expect(screen.queryByRole('alert')).toBeNull()
@@ -178,15 +237,19 @@ describe('목록', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '더 보기' }))
 
-    expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결할 수 없습니다')
+    expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결할 수 없어요')
     expect(screen.getByText('첫째 쪽')).toBeDefined()
     expect(screen.getByRole('button', { name: '더 보기' })).toBeDefined()
   })
 })
 
 describe('저장', () => {
-  it('저장하면 새로고침 없이 목록 맨 위에 나타나고 입력이 비워진다', async () => {
-    const saved = content({ title: null, url: 'https://example.com/new', metadataStatus: 'pending' })
+  it('저장하면 새로고침 없이 목록 맨 위에 나타나고 대화상자가 닫힌다', async () => {
+    const saved = content({
+      title: null,
+      url: 'https://example.com/new',
+      metadataStatus: 'pending',
+    })
     const { requests } = await setup({
       list: () => page([content({ title: '예전 글' })]),
       save: () => ({ status: 201, body: { status: 'created', content: saved } }),
@@ -199,8 +262,8 @@ describe('저장', () => {
     await waitFor(() => expect(rows()).toHaveLength(2))
     expect(rows()[0]!.textContent).toContain('https://example.com/new')
     expect(rows()[1]!.textContent).toContain('예전 글')
-    expect(screen.getByRole('status').textContent).toContain('저장했습니다')
-    expect(addressInput().value).toBe('')
+    expect(screen.getByRole('status').textContent).toContain('저장했어요')
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(saves(requests)[0]!.body).toEqual({ url: 'https://example.com/new', source: 'web' })
     // 목록을 다시 받아서 보여준 것이 아니다.
     expect(lists(requests)).toHaveLength(1)
@@ -216,8 +279,8 @@ describe('저장', () => {
 
     await save('https://example.com/dup?utm_source=x')
 
-    const notice = within(await screen.findByRole('status'))
-    expect(notice.getByText(/이미 저장한 링크입니다/)).toBeDefined()
+    const notice = within(await within(screen.getByRole('dialog')).findByRole('status'))
+    expect(notice.getByText(/이미 저장한 링크예요/)).toBeDefined()
     expect(notice.getByText('이미 있는 글')).toBeDefined()
     expect(rows()).toHaveLength(2)
     // 순서도 그대로다 (product.md D-15).
@@ -226,7 +289,7 @@ describe('저장', () => {
 
   it('빈 입력은 이유를 알리고 서버에 보내지 않는다', async () => {
     const { requests } = await setup({ list: () => page([]) })
-    await screen.findByText('아직 저장한 콘텐츠가 없습니다.')
+    await screen.findByText(FIRST_USE)
 
     await save('')
 
@@ -239,7 +302,7 @@ describe('저장', () => {
     const { requests } = await setup({
       save: () => ({ status: 201, body: { status: 'created', content: saved } }),
     })
-    await screen.findByText('아직 저장한 콘텐츠가 없습니다.')
+    await screen.findByText(FIRST_USE)
 
     await save('  https://example.com/a  ')
 
@@ -257,7 +320,7 @@ describe('저장', () => {
     await save('ftp://example.com/file')
 
     expect((await screen.findByRole('alert')).textContent).toContain(
-      'http 또는 https 주소만 저장할 수 있습니다',
+      'http 또는 https 주소만 저장할 수 있어요',
     )
     expect(rows()).toHaveLength(1)
     // 고쳐 쓸 수 있게 입력은 남긴다.
@@ -270,17 +333,17 @@ describe('저장', () => {
 
     await save('https://example.com/a')
 
-    expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결할 수 없습니다')
+    expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결할 수 없어요')
     expect(rows()).toHaveLength(1)
   })
 
   it('그 밖의 서버 오류도 성공처럼 보이지 않는다', async () => {
     await setup({ save: () => ({ status: 500, body: errorBody('INTERNAL') }) })
-    await screen.findByText('아직 저장한 콘텐츠가 없습니다.')
+    await screen.findByText(FIRST_USE)
 
     await save('https://example.com/a')
 
-    expect((await screen.findByRole('alert')).textContent).toContain('저장하지 못했습니다')
+    expect((await screen.findByRole('alert')).textContent).toContain('저장하지 못했어요')
     expect(screen.queryByRole('status')).toBeNull()
   })
 })
@@ -305,8 +368,8 @@ describe('처리 상태 갱신', () => {
 
     expect(await screen.findByText('가져온 제목')).toBeDefined()
     const row = within(screen.getByRole('listitem'))
-    expect(row.getByText('본문')).toBeDefined()
-    expect(row.getByText('완료')).toBeDefined()
+    expect(row.getByText('본문 확보')).toBeDefined()
+    expect(row.queryByText('처리 중')).toBeNull()
     expect(polls(requests)[0]!.path).toBe(`/contents/${pending.id}`)
 
     const settled = polls(requests).length
@@ -343,7 +406,7 @@ describe('처리 상태 갱신', () => {
       save: () => ({ status: 201, body: { status: 'created', content: saved } }),
       one: () => ({ status: 200, body: { ...saved, title: '새 글 제목', metadataStatus: 'done' } }),
     })
-    await screen.findByText('아직 저장한 콘텐츠가 없습니다.')
+    await screen.findByText(FIRST_USE)
 
     await save(saved.url)
 
@@ -364,7 +427,8 @@ describe('처리 상태 갱신', () => {
 
     online = true
 
-    expect(await screen.findByText('완료')).toBeDefined()
+    await waitFor(() => expect(screen.queryByText('처리 중')).toBeNull())
+    expect(screen.getByText('기다리는 글')).toBeDefined()
   })
 
   it('그 사이 사라진 항목은 목록에서 뺀다', async () => {
@@ -393,5 +457,76 @@ describe('처리 상태 갱신', () => {
 
     setHidden(false)
     await waitFor(() => expect(polls(requests).length).toBeGreaterThan(0))
+  })
+})
+
+describe('링크 저장 대화상자', () => {
+  it('Esc나 닫기로 닫히고, 열기 전에 있던 버튼으로 초점이 돌아간다', async () => {
+    await setup({ list: () => page([content()]) })
+    await screen.findByRole('listitem')
+    const opener = screen.getByRole('button', { name: '링크 저장' })
+
+    await userEvent.click(opener)
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+
+    await userEvent.click(opener)
+    await userEvent.click(screen.getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('앱 틀', () => {
+  it('넓은 화면에서는 사이드바에 내비게이션과 설정이 있다', async () => {
+    await setup({ list: () => page([content()]) })
+
+    const nav = within(screen.getByRole('navigation', { name: '주요 메뉴' }))
+    expect(nav.getByRole('link', { name: '홈' }).getAttribute('aria-current')).toBe('page')
+    expect(nav.getByRole('button', { name: '설정' })).toBeDefined()
+  })
+
+  it('좁은 화면에서는 상단 바에 내비게이션이 있고 설정은 그 밖의 아이콘이다', async () => {
+    await setup({ list: () => page([content()]) }, { narrow: true })
+
+    const nav = within(screen.getByRole('navigation', { name: '주요 메뉴' }))
+    expect(nav.getByRole('link', { name: '홈' })).toBeDefined()
+    expect(nav.queryByRole('button', { name: '설정' })).toBeNull()
+    expect(screen.getByRole('button', { name: '설정' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '링크 저장' })).toBeDefined()
+  })
+
+  it('설정에서 테마를 고르면 화면에 적용되고 이 브라우저에 남는다', async () => {
+    await setup({ list: () => page([content()]) })
+
+    await userEvent.click(screen.getByRole('button', { name: '설정' }))
+    expect(
+      screen.getByRole('menuitemradio', { name: '시스템 설정' }).getAttribute('aria-checked'),
+    ).toBe('true')
+
+    await userEvent.click(screen.getByRole('menuitemradio', { name: '다크' }))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(window.localStorage.getItem('rebomi-theme')).toBe('dark')
+    expect(screen.getByRole('menuitemradio', { name: '다크' }).getAttribute('aria-checked')).toBe(
+      'true',
+    )
+
+    // 시스템 설정으로 돌리면 고정을 푼다.
+    await userEvent.click(screen.getByRole('menuitemradio', { name: '시스템 설정' }))
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+    expect(window.localStorage.getItem('rebomi-theme')).toBeNull()
+  })
+
+  it('브라우저 언어가 영어면 영어로 보인다', async () => {
+    await setup(
+      { list: () => page([content({ title: 'A post', extractionLevel: 'full' })]) },
+      { locale: 'en' },
+    )
+
+    const row = within(await screen.findByRole('listitem'))
+    expect(screen.getByRole('heading', { name: 'Recently saved' })).toBeDefined()
+    expect(row.getByText('Just now')).toBeDefined()
+    expect(row.getByText('Full text')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Save link' })).toBeDefined()
   })
 })

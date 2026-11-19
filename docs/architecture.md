@@ -13,7 +13,7 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | --- | --- | --- | --- |
 | `apps/api` | 공개 REST API | Fastify 5, Zod 4 | **골격만.** `GET /health`(DB 핑 포함)와 인증 경로(`POST /auth/login`·`/auth/refresh`·`/auth/logout`), `requireAuth`, 콘텐츠 저장·목록·단건 조회(`POST /contents`·`GET /contents`·`GET /contents/:id`), 보관·삭제·복구(`POST /contents/:id/archive`·`/trash`·`/restore`), 키워드 검색(`POST /search`), 대기 명단 설문 응답 저장(`PUT /waitlist/responses/:id`, 인증 없음 — §8). 공통 에러 핸들러와 CORS 구현됨 |
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
-| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 URL 저장과 목록 화면이다(§5). 홈·Inbox·보관함 구분, 보관·삭제, 정렬, 검색은 없음. 스타일은 Tailwind CSS 4이고 지금은 랜딩에만 적용돼 있다(§8) |
+| `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 로그인해야 보이는 `/app`은 디자인(RebomiWeb)의 틀을 갖는다: 넓은 화면은 사이드바, 860px 이하는 상단 바, 상단의 "링크 저장"(대화상자), 설정 자리의 메뉴(테마·로그아웃). 홈은 최근 저장 목록과 첫 사용 안내다(§5). 재노출 카드, 검색, 보관함·Inbox·정리·휴지통·설정 화면, 보관·삭제, 정렬, 요약 표시는 없음. 스타일은 Tailwind CSS 4이고 랜딩과 `/app`에 적용돼 있다 — 로그인 화면은 토큰의 배경·글꼴만 따른다. 화면 언어(ko/en)는 요청의 `Accept-Language`로 정하고, 테마는 `/app`에서 고른 값(기기 설정·라이트·다크)을 브라우저에 저장해 `<html data-theme>`로 적용한다(랜딩은 늘 기기 설정). 토큰은 `light-dark()`로 한 번만 정의한다(`apps/web/src/app/globals.css`) |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **원클릭 저장.** 팝업을 열면 웹 로그인을 재사용해(§3) 지금 탭의 제목·설명·대표 이미지·본문을 뽑아 저장하고 결과와 추출 수준을 보인다(§5). 권한은 `activeTab`·`scripting`과 API 오리진. background·상시 content script·단축키·우클릭 메뉴 없음 |
 | `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트, 저장 → 보관 → 삭제 → 휴지통 목록 → 복구를 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
@@ -191,7 +191,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
   - **허용하지 않는 전이**는 휴지통의 콘텐츠를 보관하는 것 하나이고 409 `INVALID_STATE_TRANSITION`이다. 콘텐츠는 바뀌지 않는다.
   - 없는 ID와 남의 콘텐츠는 단건 조회와 같게 404다. 단, 자기 휴지통의 콘텐츠는 이 경로들로 다룰 수 있다.
   - 판정은 조건을 건 UPDATE 한 번이다 — 읽고 나서 바꾸지 않으므로 동시에 온 요청이 서로를 덮어쓰지 않는다.
-- **웹의 처리 상태 갱신 (`apps/web/src/library/`):** 저장은 즉시 응답하고 처리는 워커가 나중에 하므로, 웹은 처리 중(`metadataStatus: pending`)인 항목만 3초마다 단건 조회로 다시 확인한다. 처리 중인 항목이 없거나 탭이 숨겨져 있으면 묻지 않는다. 확인에 실패하면 항목을 그대로 두고 다음 차례에 다시 묻고, 404면 목록에서 뺀다. 서버가 변경을 밀어 주는 방식(SSE·웹소켓)은 쓰지 않는다. 목록은 첫 페이지 50개와 "더 보기"다.
+- **웹의 처리 상태 갱신 (`apps/web/src/library/`):** 저장은 즉시 응답하고 처리는 워커가 나중에 하므로, 웹은 처리 중(`metadataStatus: pending`)인 항목만 3초마다 단건 조회로 다시 확인한다. 처리 중인 항목이 없거나 탭이 숨겨져 있으면 묻지 않는다. 확인에 실패하면 항목을 그대로 두고 다음 차례에 다시 묻고, 404면 목록에서 뺀다. 서버가 변경을 밀어 주는 방식(SSE·웹소켓)은 쓰지 않는다. 목록은 첫 페이지 50개와 "더 보기"다. 목록 상태는 `/app` 레이아웃의 `LibraryProvider`에 있어, 앱 틀의 링크 저장 결과가 홈 목록에 바로 나타난다.
 - **검색 대상:** 제목, URL·도메인, 요약, 메모, 추출된 본문. 긴 본문은 청크 단위로 임베딩해 매칭 근거 문장을 제시한다. **[원문 8장]**
 - **키워드 검색 API (`POST /search`, 구현됨):** 요청한 사용자의 콘텐츠를 키워드로 찾는다. 지금 대상은 제목, URL·도메인, 설명, 추출된 본문이다 — 요약과 메모는 그 컬럼이 생길 때 넣고, 의미 검색과 RRF 결합은 아직 없다.
   - **요청은 본문으로 보낸다:** `{ query, limit?, cursor? }`. 조회지만 POST다 — 검색어를 주소에 실으면 서버 로그와 프록시에 남는다.

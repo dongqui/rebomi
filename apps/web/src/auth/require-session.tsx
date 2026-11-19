@@ -19,6 +19,17 @@ export function RequireSession({ children }: { children: ReactNode }) {
   }, [status, router])
 
   if (status === 'signed-in') return <>{children}</>
-  if (status === 'unreachable') return <ConnectionError onRetry={retry} />
-  return <p>확인 중…</p>
+  // 이 두 화면에는 아직 디자인을 입히지 않았다 (`rb-plain`).
+  if (status === 'unreachable') {
+    return (
+      <div className="rb-plain">
+        <ConnectionError onRetry={retry} />
+      </div>
+    )
+  }
+  return (
+    <div className="rb-plain">
+      <p>확인 중…</p>
+    </div>
+  )
 }

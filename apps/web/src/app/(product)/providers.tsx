@@ -3,11 +3,15 @@
 import type { ReactNode } from 'react'
 import { SessionProvider } from '@/auth/session'
 import { api, tokenStore } from '@/lib/api'
+import type { Locale } from '@/lib/locale'
+import { LocaleProvider } from '@/shell/locale-context'
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ locale, children }: { locale: Locale; children: ReactNode }) {
   return (
-    <SessionProvider client={api} tokens={tokenStore}>
-      {children}
-    </SessionProvider>
+    <LocaleProvider locale={locale}>
+      <SessionProvider client={api} tokens={tokenStore}>
+        {children}
+      </SessionProvider>
+    </LocaleProvider>
   )
 }

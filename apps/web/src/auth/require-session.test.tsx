@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SettingsMenu } from '@/shell/settings-menu'
 import { fakeApi, refreshRejected, refreshed } from '@/test/fake-api'
 import { RequireSession } from './require-session'
 import { SessionProvider } from './session'
-import { SignOutButton } from './sign-out-button'
 
 const replace = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }))
@@ -19,7 +19,7 @@ function setup(handler: Parameters<typeof fakeApi>[0]) {
     <SessionProvider client={fake.api} tokens={fake.tokens}>
       <RequireSession>
         <p>앱 화면</p>
-        <SignOutButton />
+        <SettingsMenu variant="row" />
       </RequireSession>
     </SessionProvider>,
   )
@@ -65,7 +65,8 @@ describe('RequireSession', () => {
       request.path === '/auth/logout' ? { status: 204 } : refreshed,
     )
 
-    await userEvent.click(await screen.findByRole('button', { name: '로그아웃' }))
+    await userEvent.click(await screen.findByRole('button', { name: '설정' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '로그아웃' }))
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'))
     expect(requests.some((request) => request.path === '/auth/logout')).toBe(true)
