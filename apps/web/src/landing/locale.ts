@@ -3,10 +3,14 @@ import {
   WAITLIST_HEROES,
   type WaitlistHeadline,
   type WaitlistHero,
+  type WaitlistLocale,
 } from '@rebomi/api-contract'
 
-// 언어를 고르는 규칙은 앱 화면도 함께 쓴다.
-export { pickLocale } from '@/lib/locale'
+/**
+ * 랜딩의 언어 (WAIT-5). 지금은 방문자의 브라우저 언어와 무관하게 영어다 (2026-11-20).
+ * 한국어 문구는 `copy.ts` 에 그대로 있다 — 다시 고르게 할 때 여기서 정한다.
+ */
+export const LANDING_LOCALE: WaitlistLocale = 'en'
 
 export const DEFAULT_HEADLINE: WaitlistHeadline = 'progress'
 /** 글만. */
