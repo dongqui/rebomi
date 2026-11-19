@@ -180,26 +180,49 @@ export const refreshTokens = pgTable(
  * 요청을 행으로 옮기는 apps/api 의 타입체크가 잡는다.
  */
 
-/** 저장한 것들이 쌓이는 곳 (복수 선택). */
-export const WAITLIST_SAVE_PLACES = [
-  'instagram',
-  'youtube',
-  'reddit',
-  'x',
-  'browser',
-  'notes',
+/** 지금 주로 하는 일. */
+export const WAITLIST_OCCUPATIONS = [
+  'studying',
+  'employed',
+  'freelance',
+  'own_business',
+  'creator',
   'other',
 ] as const
-/** 저장한 걸 다시 보는 빈도. */
-export const WAITLIST_REVISIT_FREQUENCIES = ['almost_never', 'sometimes', 'most_weeks'] as const
-/** 가장 도움이 될 것. */
-export const WAITLIST_MOST_HELPFUL = ['summary', 'search', 'resurfacing', 'one_place'] as const
-/** 지불 의향. */
-export const WAITLIST_WILLINGNESS_TO_PAY = ['yes', 'maybe', 'no'] as const
+/** 저장할 때 그걸로 하고 싶은 것. */
+export const WAITLIST_SAVE_INTENTS = [
+  'learn',
+  'work',
+  'try',
+  'enjoy',
+  'reference',
+  'other',
+] as const
+/** 저장한 것과 관련해 가장 답답한 점. */
+export const WAITLIST_FRUSTRATIONS = [
+  'forget',
+  'cant_find',
+  'too_many',
+  'no_time',
+  'never_use',
+  'none',
+  'other',
+] as const
+/** Rebomi가 한 가지를 도와준다면. */
+export const WAITLIST_WANTED_HELPS = [
+  'rediscover',
+  'find',
+  'pick',
+  'use',
+  'one_place',
+  'other',
+] as const
 /** 방문자가 본 언어. */
 export const WAITLIST_LOCALES = ['ko', 'en'] as const
 /** 방문자가 본 헤드라인 (광고 소재). */
-export const WAITLIST_HEADLINES = ['forgot', 'scattered', 'find'] as const
+export const WAITLIST_HEADLINES = ['progress', 'forgot', 'scattered', 'find'] as const
+/** 방문자가 본 첫 화면 그림 (광고 소재). `none` 은 글만이다. */
+export const WAITLIST_HEROES = ['none', 'card', 'notice', 'phone'] as const
 
 /**
  * 설문 응답 하나. 방문자가 답을 고를 때마다 같은 행을 갱신한다.
@@ -215,13 +238,16 @@ export const waitlistResponses = pgTable(
     id: uuid('id').primaryKey(),
     locale: text('locale', { enum: WAITLIST_LOCALES }).notNull(),
     headline: text('headline', { enum: WAITLIST_HEADLINES }).notNull(),
-    savePlaces: text('save_places', { enum: WAITLIST_SAVE_PLACES })
-      .array()
-      .notNull()
-      .default(sql`'{}'::text[]`),
-    revisitFrequency: text('revisit_frequency', { enum: WAITLIST_REVISIT_FREQUENCIES }),
-    mostHelpful: text('most_helpful', { enum: WAITLIST_MOST_HELPFUL }),
-    willingnessToPay: text('willingness_to_pay', { enum: WAITLIST_WILLINGNESS_TO_PAY }),
+    hero: text('hero', { enum: WAITLIST_HEROES }).notNull(),
+    occupation: text('occupation', { enum: WAITLIST_OCCUPATIONS }),
+    /** `…Other` 는 그 질문의 답이 `other` 일 때 방문자가 직접 적은 글이다. */
+    occupationOther: text('occupation_other'),
+    saveIntent: text('save_intent', { enum: WAITLIST_SAVE_INTENTS }),
+    saveIntentOther: text('save_intent_other'),
+    frustration: text('frustration', { enum: WAITLIST_FRUSTRATIONS }),
+    frustrationOther: text('frustration_other'),
+    wantedHelp: text('wanted_help', { enum: WAITLIST_WANTED_HELPS }),
+    wantedHelpOther: text('wanted_help_other'),
     /** 앞뒤 공백을 떼고 소문자로 넣는다. */
     email: text('email'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -230,18 +256,10 @@ export const waitlistResponses = pgTable(
   (table) => [
     check('waitlist_responses_locale_check', oneOf(table.locale, WAITLIST_LOCALES)),
     check('waitlist_responses_headline_check', oneOf(table.headline, WAITLIST_HEADLINES)),
-    check(
-      'waitlist_responses_save_places_check',
-      sql`${table.savePlaces} <@ array[${sql.raw(WAITLIST_SAVE_PLACES.map((value) => `'${value}'`).join(', '))}]::text[]`,
-    ),
-    check(
-      'waitlist_responses_revisit_frequency_check',
-      oneOf(table.revisitFrequency, WAITLIST_REVISIT_FREQUENCIES),
-    ),
-    check('waitlist_responses_most_helpful_check', oneOf(table.mostHelpful, WAITLIST_MOST_HELPFUL)),
-    check(
-      'waitlist_responses_willingness_to_pay_check',
-      oneOf(table.willingnessToPay, WAITLIST_WILLINGNESS_TO_PAY),
-    ),
+    check('waitlist_responses_hero_check', oneOf(table.hero, WAITLIST_HEROES)),
+    check('waitlist_responses_occupation_check', oneOf(table.occupation, WAITLIST_OCCUPATIONS)),
+    check('waitlist_responses_save_intent_check', oneOf(table.saveIntent, WAITLIST_SAVE_INTENTS)),
+    check('waitlist_responses_frustration_check', oneOf(table.frustration, WAITLIST_FRUSTRATIONS)),
+    check('waitlist_responses_wanted_help_check', oneOf(table.wantedHelp, WAITLIST_WANTED_HELPS)),
   ],
 )

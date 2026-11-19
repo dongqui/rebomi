@@ -138,17 +138,7 @@ function Card({ copy }: { copy: LandingCopy['phone'] }) {
           <div className="text-strong">{copy.note}</div>
         </div>
         <div className="mt-auto flex flex-col gap-3 pt-2">
-          <div className="flex items-center text-[15px] leading-[1.252] font-medium text-link">
-            <span>{copy.details}</span>
-            <span className="flex size-5 items-center justify-center">
-              <svg width="6.4" height="10.9" viewBox="0 0 6.4 10.9" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M 1 0 C 0.8 0 0.5 0.1 0.4 0.3 C 0 0.7 0 1.2 0.4 1.6 L 4.2 5.4 L 0.3 9.3 C -0.1 9.7 -0.1 10.2 0.3 10.6 C 0.7 11 1.2 11 1.6 10.6 L 6.1 6.1 C 6.5 5.7 6.5 5.2 6.1 4.8 L 1.6 0.3 C 1.4 0.2 1.2 0 1 0 Z"
-                />
-              </svg>
-            </span>
-          </div>
+          <DetailsLink>{copy.details}</DetailsLink>
           <div className="flex">
             <FakeButton variant="fill">{copy.open}</FakeButton>
           </div>
@@ -158,8 +148,25 @@ function Card({ copy }: { copy: LandingCopy['phone'] }) {
   )
 }
 
+/** "자세히 보기"처럼 화살표가 붙은 글자 링크의 그림. */
+export function DetailsLink({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center text-[15px] leading-[1.252] font-medium text-link">
+      <span>{children}</span>
+      <span className="flex size-5 items-center justify-center">
+        <svg width="6.4" height="10.9" viewBox="0 0 6.4 10.9" fill="currentColor">
+          <path
+            fillRule="evenodd"
+            d="M 1 0 C 0.8 0 0.5 0.1 0.4 0.3 C 0 0.7 0 1.2 0.4 1.6 L 4.2 5.4 L 0.3 9.3 C -0.1 9.7 -0.1 10.2 0.3 10.6 C 0.7 11 1.2 11 1.6 10.6 L 6.1 6.1 C 6.5 5.7 6.5 5.2 6.1 4.8 L 1.6 0.3 C 1.4 0.2 1.2 0 1 0 Z"
+          />
+        </svg>
+      </span>
+    </div>
+  )
+}
+
 /** 버튼처럼 보이기만 하는 것. 그림의 일부라 누를 수 없다. */
-function FakeButton({ variant, children }: { variant: 'fill' | 'weak'; children: ReactNode }) {
+export function FakeButton({ variant, children }: { variant: 'fill' | 'weak'; children: ReactNode }) {
   return (
     <div
       className={`flex h-12 min-w-0 flex-1 items-center justify-center rounded-[14px] px-4 text-[17px] leading-[1.252] font-semibold ${

@@ -1,5 +1,9 @@
 import rateLimit from '@fastify/rate-limit'
-import { ERROR_CODES, saveWaitlistResponseRequestSchema } from '@rebomi/api-contract'
+import {
+  ERROR_CODES,
+  saveWaitlistResponseRequestSchema,
+  waitlistAnswersOf,
+} from '@rebomi/api-contract'
 import { schema, sql, type Db } from '@rebomi/db'
 import type { FastifyInstance } from 'fastify'
 import { errorBody } from '../errors.js'
@@ -60,14 +64,7 @@ export function registerWaitlistRoutes(app: FastifyInstance, deps: WaitlistRoute
         }
 
         const body = saveWaitlistResponseRequestSchema.parse(request.body)
-        const answers = {
-          locale: body.locale,
-          headline: body.headline,
-          savePlaces: body.savePlaces,
-          revisitFrequency: body.revisitFrequency ?? null,
-          mostHelpful: body.mostHelpful ?? null,
-          willingnessToPay: body.willingnessToPay ?? null,
-        }
+        const answers = waitlistAnswersOf(body)
 
         await db.drizzle
           .insert(waitlistResponses)

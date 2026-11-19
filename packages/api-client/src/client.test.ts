@@ -793,8 +793,9 @@ describe('saveWaitlistResponse()', () => {
   const ID = '0b0e7c7e-7b1f-4d0a-9d55-0d6f2f1f6a11'
   const ANSWERS: SaveWaitlistResponseRequest = {
     locale: 'ko',
-    headline: 'forgot',
-    savePlaces: ['instagram'],
+    headline: 'progress',
+    hero: 'none',
+    occupation: 'employed',
   }
 
   it('응답 ID의 경로로 PUT하고 지금까지의 답을 그대로 싣는다', async () => {
@@ -802,7 +803,7 @@ describe('saveWaitlistResponse()', () => {
     const client = createApiClient({ baseUrl: 'http://api.test' })
     const request: SaveWaitlistResponseRequest = {
       ...ANSWERS,
-      revisitFrequency: 'sometimes',
+      saveIntent: 'learn',
       email: 'a@example.com',
     }
 

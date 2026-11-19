@@ -32,7 +32,7 @@ function newId(): string {
   return id
 }
 
-const base = { locale: 'ko' as const, headline: 'forgot' as const }
+const base = { locale: 'ko' as const, headline: 'progress' as const, hero: 'none' as const }
 
 /** drizzle은 pg 오류를 DrizzleQueryError.cause 로 감싼다. */
 const pgCode = (promise: Promise<unknown>): Promise<string | undefined> =>
@@ -50,17 +50,22 @@ describe('waitlist_responses 테이블', () => {
 
     const [row] = await db.drizzle
       .insert(schema.waitlistResponses)
-      .values({ id, ...base, savePlaces: ['instagram'] })
+      .values({ id, ...base, occupation: 'employed' })
       .returning()
 
     expect(row).toMatchObject({
       id,
       locale: 'ko',
-      headline: 'forgot',
-      savePlaces: ['instagram'],
-      revisitFrequency: null,
-      mostHelpful: null,
-      willingnessToPay: null,
+      headline: 'progress',
+      hero: 'none',
+      occupation: 'employed',
+      occupationOther: null,
+      saveIntent: null,
+      saveIntentOther: null,
+      frustration: null,
+      frustrationOther: null,
+      wantedHelp: null,
+      wantedHelpOther: null,
       email: null,
     })
     expect(row!.createdAt).toBeInstanceOf(Date)
@@ -69,7 +74,7 @@ describe('waitlist_responses 테이블', () => {
 
   it('ID를 주지 않으면 넣을 수 없다 — DB가 대신 만들지 않는다', async () => {
     const insert = db.drizzle.execute(
-      `insert into waitlist_responses (locale, headline) values ('ko', 'forgot')`,
+      `insert into waitlist_responses (locale, headline, hero) values ('ko', 'progress', 'none')`,
     )
 
     expect(await pgCode(insert)).toBe(NOT_NULL_VIOLATION)
@@ -91,16 +96,17 @@ describe('waitlist_responses 테이블', () => {
   })
 
   it.each([
-    ['save_places', `'{tiktok}'`],
-    ['revisit_frequency', `'daily'`],
-    ['most_helpful', `'tags'`],
-    ['willingness_to_pay', `'sure'`],
+    ['occupation', `'student'`],
+    ['save_intent', `'hoard'`],
+    ['frustration', `'everything'`],
+    ['wanted_help', `'tags'`],
+    ['hero', `'video'`],
     ['locale', `'ja'`],
     ['headline', `'other'`],
   ])('%s 에 정의되지 않은 값 %s 는 넣을 수 없다', async (column, value) => {
     const id = newId()
-    const columns = ['id', 'locale', 'headline']
-    const values = [`'${id}'`, `'ko'`, `'forgot'`]
+    const columns = ['id', 'locale', 'headline', 'hero']
+    const values = [`'${id}'`, `'ko'`, `'progress'`, `'none'`]
     const at = columns.indexOf(column)
     if (at === -1) {
       columns.push(column)
