@@ -20,7 +20,7 @@ import {
 } from 'react'
 import { COPY, type LandingCopy } from './copy'
 import { createResponseSaver } from './response-saver'
-import { Button, IconButton, TextButton } from './ui'
+import { Button, IconButton, TextButton } from '@/ui/buttons'
 
 /*
  * 대기 명단 등록 (waitlist.md WAIT-3, WAIT-4, WAIT-8).

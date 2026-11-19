@@ -3,12 +3,14 @@
 import { ApiError, type ApiClient } from '@rebomi/api-client'
 import { ERROR_CODES, type Content, type CreateContentResponse } from '@rebomi/api-contract'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCopy } from '@/shell/locale-context'
 import { listErrorMessage } from './labels'
 
-type LibraryClient = Pick<ApiClient, 'listContents' | 'saveContent' | 'getContent'>
+export type LibraryClient = Pick<ApiClient, 'listContents' | 'saveContent' | 'getContent'>
 
 /** 첫 페이지의 상태. 받지 못한 것과 비어 있는 것을 구분한다. */
-export type LoadState = { kind: 'loading' } | { kind: 'ready' } | { kind: 'failed'; message: string }
+export type LoadState =
+  { kind: 'loading' } | { kind: 'ready' } | { kind: 'failed'; message: string }
 
 export type Library = {
   load: LoadState
@@ -35,6 +37,7 @@ const isPending = (content: Content) => content.metadataStatus === 'pending'
  * 다시 조회한다. 처리 중인 항목이 없으면 묻지 않는다.
  */
 export function useLibrary(client: LibraryClient, pollMs: number): Library {
+  const copy = useCopy()
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [items, setItems] = useState<Content[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -53,14 +56,14 @@ export function useLibrary(client: LibraryClient, pollMs: number): Library {
         setLoad({ kind: 'ready' })
       },
       (error: unknown) => {
-        if (!cancelled) setLoad({ kind: 'failed', message: listErrorMessage(error) })
+        if (!cancelled) setLoad({ kind: 'failed', message: listErrorMessage(error, copy) })
       },
     )
 
     return () => {
       cancelled = true
     }
-  }, [client, attempt])
+  }, [client, attempt, copy])
 
   const reload = useCallback(() => {
     setLoad({ kind: 'loading' })
@@ -84,10 +87,10 @@ export function useLibrary(client: LibraryClient, pollMs: number): Library {
           })
           setNextCursor(page.nextCursor)
         },
-        (error: unknown) => setMoreError(listErrorMessage(error)),
+        (error: unknown) => setMoreError(listErrorMessage(error, copy)),
       )
       .finally(() => setLoadingMore(false))
-  }, [client, nextCursor, loadingMore])
+  }, [client, nextCursor, loadingMore, copy])
 
   const save = useCallback(
     async (url: string) => {

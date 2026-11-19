@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+/*
+ * Rebomi 디자인 토큰 — 디자인의 `rebomi-tokens.css` 에서 톤 "웜 페이퍼"가 쓰는 값만
+ * 가져왔다. 따뜻한 종이색 배경 + 먹색 글자와 버튼 + 링크에만 코발트 블루.
+ *
+ * 테마: 토큰마다 `light-dark(밝은 값, 어두운 값)` 로 한 번만 적는다. 어느 쪽이 쓰이는지는
+ * `color-scheme` 이 정한다 — 기본은 기기 설정을 따르고, `<html data-theme="light|dark">`
+ * 가 있으면 그쪽으로 고정한다. 랜딩은 속성을 달지 않아 늘 기기 설정을 따르고
+ * (waitlist.md WAIT-7), `/app` 은 사용자가 고른 값을 단다 (`src/theme/`).
+ *
+ * 색 톤을 더할 때는 `:root[data-tone='…']` 로 아래 토큰을 덮어쓰는 묶음 하나를 더한다.
+ */
+:root {
+  color-scheme: light dark;
+  --rb-bg: light-dark(rgb(245, 242, 234), rgb(26, 24, 21));
+  /* 다크에서는 카드가 배경보다 밝다. */
+  --rb-surface: light-dark(rgb(236, 232, 222), rgb(37, 34, 30));
+  --rb-surface-floating: light-dark(rgb(251, 249, 244), rgb(37, 34, 30));
+  --rb-text-strong: light-dark(rgb(28, 25, 20), rgb(245, 240, 230));
+  --rb-text: light-dark(rgba(28, 25, 20, 0.88), rgba(245, 240, 230, 0.92));
+  --rb-text-sub: light-dark(rgba(28, 25, 20, 0.74), rgba(245, 240, 230, 0.74));
+  --rb-text-muted: light-dark(rgba(28, 25, 20, 0.66), rgba(245, 240, 230, 0.64));
+  --rb-icon: light-dark(rgba(28, 25, 20, 0.66), rgba(245, 240, 230, 0.64));
+  --rb-border: light-dark(rgba(28, 25, 20, 0.14), rgba(245, 240, 230, 0.14));
+  --rb-fill-weak: light-dark(rgba(28, 25, 20, 0.06), rgba(245, 240, 230, 0.09));
+  --rb-fill-pressed: light-dark(rgba(28, 25, 20, 0.1), rgba(245, 240, 230, 0.14));
+  --rb-thumb: light-dark(rgba(60, 45, 20, 0.12), rgba(245, 240, 230, 0.12));
+  --rb-brand: light-dark(rgb(28, 25, 20), rgb(245, 240, 230));
+  --rb-on-brand: light-dark(rgb(245, 242, 234), rgb(26, 24, 21));
+  --rb-brand-text: light-dark(rgb(39, 63, 199), rgb(157, 180, 255));
+  --rb-brand-weak: light-dark(rgba(39, 63, 199, 0.1), rgba(157, 180, 255, 0.14));
+  --rb-focus: light-dark(rgba(39, 63, 199, 0.6), rgba(157, 180, 255, 0.7));
+  --rb-danger-text: light-dark(rgb(228, 41, 57), rgb(250, 97, 109));
+  --rb-dim: light-dark(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.56));
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans:
+    var(--font-pretendard), Pretendard, -apple-system, BlinkMacSystemFont, system-ui,
+    'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', Roboto, sans-serif;
+
+  /* TDS의 굵기 단계. Pretendard 가변 글꼴이라 510·590이 그대로 표현된다. */
+  --font-weight-medium: 510;
+  --font-weight-semibold: 590;
+
+  /* 디자인의 두 경계: 560px 이하에서 대화상자가 화면을 채우고, 860px 이하에서 한 단이 된다. */
+  --breakpoint-roomy: 561px;
+  --breakpoint-wide: 861px;
+
+  --color-bg: var(--rb-bg);
+  --color-surface: var(--rb-surface);
+  --color-floating: var(--rb-surface-floating);
+  --color-strong: var(--rb-text-strong);
+  --color-body: var(--rb-text);
+  --color-sub: var(--rb-text-sub);
+  --color-muted: var(--rb-text-muted);
+  --color-icon: var(--rb-icon);
+  --color-line: var(--rb-border);
+  --color-fill: var(--rb-fill-weak);
+  --color-fill-pressed: var(--rb-fill-pressed);
+  --color-thumb: var(--rb-thumb);
+  --color-brand: var(--rb-brand);
+  --color-on-brand: var(--rb-on-brand);
+  --color-link: var(--rb-brand-text);
+  --color-link-weak: var(--rb-brand-weak);
+  --color-focus: var(--rb-focus);
+  --color-danger: var(--rb-danger-text);
+  --color-dim: var(--rb-dim);
+}
+
+@layer base {
+  body {
+    background: var(--rb-bg);
+    color: var(--rb-text);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.55;
+    word-break: keep-all;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 접근성 기준선: 키보드 포커스, 움직임 감소. */
+  :focus-visible {
+    outline: 2px solid var(--rb-focus);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * 아직 디자인을 입히지 않은 화면(로그인, 연결 오류)이 Tailwind의 기본 초기화 전 모습을
+ * 유지하게 한다. 그 화면에 디자인을 입히면 이 묶음과 클래스를 함께 지운다.
+ */
+@layer base {
+  .rb-plain {
+    padding: 3rem 1.5rem;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  .rb-plain h1 {
+    margin: 0.67em 0;
+    font-weight: 700;
+  }
+
+  .rb-plain p {
+    margin: 1em 0;
+  }
+
+  .rb-plain button {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--rb-border);
+    border-radius: 8px;
+    background: var(--rb-fill-weak);
+    cursor: pointer;
+  }
+}

@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import localFont from 'next/font/local'
 import type { ReactNode } from 'react'
 import { pickLocale } from '@/landing/locale'
-import './globals.css'
+import '../globals.css'
 
 // Pretendard 가변 글꼴 한 파일 (SIL OFL 1.1). 영문과 한글을 같은 글꼴로 쓴다.
 const pretendard = localFont({
