@@ -136,7 +136,7 @@ const en: LandingCopy = {
   doesTitle: 'What Rebomi does with your saves',
   rediscover: {
     title: 'Rediscover what you forgot you saved.',
-    text: 'Every so often, Rebomi brings back a few of your saves. Keep what matters. Delete what doesn’t.',
+    text: 'Every so often, Rebomi brings back a few of your saves.',
     head: 'Today’s finds',
     items: [
       'I tracked every dollar for a year. Here’s what changed.',
@@ -311,7 +311,7 @@ const ko: LandingCopy = {
   doesTitle: 'Rebomi가 저장한 것들로 하는 일',
   rediscover: {
     title: '저장해 놓고 잊은 것들을 다시 만나요.',
-    text: '가끔씩 Rebomi가 저장한 것 몇 개를 다시 꺼내 드려요. 필요한 건 남기고, 아닌 건 지우세요.',
+    text: '가끔씩 Rebomi가 저장한 것 몇 개를 다시 꺼내 드려요.',
     head: '오늘의 재발견',
     items: [
       '1년 동안 쓴 돈을 전부 기록해 봤더니 달라진 것',

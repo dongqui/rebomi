@@ -1,7 +1,7 @@
 import type { WaitlistHeadline, WaitlistHero, WaitlistLocale } from '@rebomi/api-contract'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fakeApi, type FakeRequest, type FakeResponse } from '@/test/fake-api'
 import { JoinButton, WaitlistProvider } from './waitlist'
 
@@ -480,5 +480,83 @@ describe('키보드', () => {
     }
     await app.user.tab({ shift: true })
     expect(app.dialog().contains(document.activeElement)).toBe(true)
+  })
+})
+
+describe('모바일 키보드', () => {
+  /** 브라우저의 visual viewport 흉내. `shrinkTo` 가 키보드가 올라온 것이다. */
+  function fakeViewport() {
+    const viewport = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 })
+    vi.stubGlobal('visualViewport', viewport)
+    return {
+      shrinkTo(height: number, offsetTop = 0) {
+        act(() => {
+          Object.assign(viewport, { height, offsetTop })
+          viewport.dispatchEvent(new Event('resize'))
+        })
+      },
+    }
+  }
+
+  const overlay = (app: Setup) => app.dialog().parentElement!
+
+  it('키보드가 올라와 보이는 영역이 줄면 대화상자도 그 영역에 맞춰 줄어든다', async () => {
+    const viewport = fakeViewport()
+    const app = setup()
+    await app.open()
+    expect(overlay(app).style.height).toBe('800px')
+
+    viewport.shrinkTo(420, 96)
+
+    expect(overlay(app).style.height).toBe('420px')
+    expect(overlay(app).style.top).toBe('96px')
+  })
+
+  it('보이는 영역이 줄 때 쓰고 있던 입력란을 보이는 곳으로 올린다', async () => {
+    const viewport = fakeViewport()
+    const app = setup()
+    await answerAll(app)
+    const input = within(app.dialog()).getByLabelText('Email')
+    const reveal = vi.fn()
+    input.scrollIntoView = reveal
+    expect(document.activeElement).toBe(input)
+
+    viewport.shrinkTo(420)
+
+    expect(reveal).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
+  it('입력란을 쓰고 있지 않으면 아무것도 스크롤하지 않는다', async () => {
+    const viewport = fakeViewport()
+    const app = setup()
+    await app.open()
+    const reveal = vi.fn()
+    app.option('Other').scrollIntoView = reveal
+
+    viewport.shrinkTo(420)
+
+    expect(reveal).not.toHaveBeenCalled()
+  })
+
+  it('기타를 고르면 적는 칸을 보이는 곳으로 올린다', async () => {
+    fakeViewport()
+    const app = setup()
+    await app.open()
+    const reveal = vi.fn()
+    HTMLInputElement.prototype.scrollIntoView = reveal
+
+    await app.user.click(app.option('Other'))
+
+    await waitFor(() => expect(reveal).toHaveBeenCalledWith({ block: 'nearest' }))
+    // @ts-expect-error jsdom에는 원래 없다. 다른 테스트에 남기지 않는다.
+    delete HTMLInputElement.prototype.scrollIntoView
+  })
+
+  it('visual viewport를 주지 않는 브라우저에서는 화면 전체를 쓴다', async () => {
+    const app = setup()
+
+    await app.open()
+
+    expect(overlay(app).style.height).toBe('')
   })
 })

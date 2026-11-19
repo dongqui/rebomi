@@ -232,6 +232,40 @@ export function WaitlistProvider({
     </WaitlistContext.Provider>
   )
 }
+/**
+ * 실제로 보이는 영역(visual viewport). 모바일에서 키보드가 올라오면 높이가 줄고, iOS는
+ * 페이지를 밀어 올려 `top` 도 바뀐다. 이 값을 주지 않는 브라우저에서는 `null` 이다.
+ */
+function useVisibleArea(): { top: number; height: number } | null {
+  const [area, setArea] = useState<{ top: number; height: number } | null>(null)
+
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    const update = () => setArea({ top: viewport.offsetTop, height: viewport.height })
+    update()
+    viewport.addEventListener('resize', update)
+    viewport.addEventListener('scroll', update)
+    return () => {
+      viewport.removeEventListener('resize', update)
+      viewport.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  return area
+}
+
+/** 포커스가 입력란에 있으면 보이는 곳까지만 스크롤한다. */
+function revealActiveInput(within: HTMLElement | null): void {
+  const active = document.activeElement
+  if (active instanceof HTMLInputElement && within?.contains(active)) {
+    active.scrollIntoView?.({ block: 'nearest' })
+  }
+}
+
+/** 입력란으로 포커스를 옮긴 뒤 키보드가 올라올 틈을 주고 보이게 한다. */
+const REVEAL_DELAY_MS = 60
+
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), a[href]'
 
 /**
@@ -251,10 +285,16 @@ function Dialog({
   children: ReactNode
 }) {
   const panel = useRef<HTMLDivElement>(null)
+  const visible = useVisibleArea()
 
   useEffect(() => {
     panel.current?.querySelector<HTMLElement>('[data-step-focus]')?.focus()
   }, [step])
+
+  // 보이는 영역이 줄면(키보드가 올라오면) 쓰고 있던 입력란을 다시 보이는 곳으로 올린다.
+  useEffect(() => {
+    if (visible !== null) revealActiveInput(panel.current)
+  }, [visible])
 
   // 열려 있는 동안 뒤의 페이지가 스크롤되지 않게 한다.
   useEffect(() => {
@@ -292,6 +332,9 @@ function Dialog({
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-dim"
+      // 키보드가 올라오면 화면에 고정된 것은 키보드 뒤로 깔린다. 보이는 영역에 맞춰 줄여서
+      // 아래의 버튼까지 키보드 위에 붙인다.
+      style={visible === null ? undefined : { top: visible.top, height: visible.height, bottom: 'auto' }}
       onKeyDown={onKeyDown}
     >
       <div
@@ -410,7 +453,12 @@ function QuestionStep({
                   onPick(option.key)
                   // 방금 고른 기타: 칸이 그려진 뒤 그리로 커서를 옮긴다.
                   if (option.key === OTHER) {
-                    requestAnimationFrame(() => otherInput.current?.focus({ preventScroll: true }))
+                    requestAnimationFrame(() => {
+                      const input = otherInput.current
+                      input?.focus({ preventScroll: true })
+                      // 칸이 화면 밖이나 키보드 뒤에 있으면 보이는 곳까지만 올린다.
+                      setTimeout(() => input?.scrollIntoView?.({ block: 'nearest' }), REVEAL_DELAY_MS)
+                    })
                   }
                 }}
                 className={`flex min-h-[52px] w-full cursor-pointer items-center justify-between gap-3 rounded-[14px] px-4 py-3 text-left text-[17px] font-medium transition-colors duration-[120ms] ${
