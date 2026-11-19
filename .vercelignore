@@ -1,0 +1,28 @@
+# `vercel deploy` 가 올리지 않을 것. 이 파일이 있으면 .gitignore 는 쓰이지 않는다.
+node_modules
+.turbo
+.next
+dist
+out
+build
+coverage
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.git
+.vercel
+.claude
+.agents
+.codex
+.mcp.json
+.expo
+web-build
+*.log
+
+# 웹 배포에 필요 없는 앱과 문서
+apps/mobile
+apps/extension
+apps/e2e
+docs
+docker

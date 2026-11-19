@@ -2,9 +2,11 @@
 
 import type { ApiClient } from '@rebomi/api-client'
 import {
+  WAITLIST_OTHER_MAX_LENGTH,
   saveWaitlistResponseRequestSchema,
   type SaveWaitlistResponseRequest,
   type WaitlistHeadline,
+  type WaitlistHero,
   type WaitlistLocale,
 } from '@rebomi/api-contract'
 import {
@@ -25,20 +27,22 @@ import { Button, IconButton, TextButton } from '@/ui/buttons'
 /*
  * 대기 명단 등록 (waitlist.md WAIT-3, WAIT-4, WAIT-8).
  *
- * 등록 버튼 → 질문 네 개 → 이메일 → 완료. 상태는 페이지에 한 벌만 있어서 어느 등록
+ * 등록 버튼 → 질문 네 개(하나씩 고른다) → 이메일 → 완료. 상태는 페이지에 한 벌만 있어서 어느 등록
  * 버튼으로 열어도, 닫았다 다시 열어도 하던 곳에서 이어진다.
  */
 
-const QUESTIONS = ['savePlaces', 'revisitFrequency', 'mostHelpful', 'willingnessToPay'] as const
+const QUESTIONS = ['occupation', 'saveIntent', 'frustration', 'wantedHelp'] as const
 type QuestionId = (typeof QUESTIONS)[number]
 type Step = QuestionId | 'email' | 'done'
 const STEPS: readonly Step[] = [...QUESTIONS, 'email', 'done']
 
-/** 지금까지의 답. 서버로 보내는 모양 그대로다. */
-type Answers = Pick<
-  SaveWaitlistResponseRequest,
-  'savePlaces' | 'revisitFrequency' | 'mostHelpful' | 'willingnessToPay'
->
+/** 지금까지 고른 답. 질문마다 하나다. */
+type Answers = Pick<SaveWaitlistResponseRequest, QuestionId>
+/** 질문마다 "기타"에 적은 글. 다른 답으로 바꿔도 지우지 않는다 — 돌아오면 그대로 있다. */
+type Others = Partial<Record<QuestionId, string>>
+
+/** 고르면 직접 적는 칸이 열리는 선택지. 질문마다 마지막에 있다. */
+const OTHER = 'other'
 
 /** 하나만 고르는 질문은 고르면 이만큼 뒤에 넘어간다 — 고른 표시가 보일 시간이다. */
 const AUTO_ADVANCE_MS = 220
@@ -64,18 +68,21 @@ export function WaitlistProvider({
   client,
   locale,
   headline,
+  hero,
   children,
 }: {
   client: Pick<ApiClient, 'saveWaitlistResponse'>
   locale: WaitlistLocale
   headline: WaitlistHeadline
+  hero: WaitlistHero
   children: ReactNode
 }) {
   const copy = COPY[locale]
 
   const [isOpen, setIsOpen] = useState(false)
-  const [step, setStep] = useState<Step>('savePlaces')
-  const [answers, setAnswers] = useState<Answers>({ savePlaces: [] })
+  const [step, setStep] = useState<Step>(QUESTIONS[0])
+  const [answers, setAnswers] = useState<Answers>({})
+  const [others, setOthers] = useState<Others>({})
   const [email, setEmail] = useState('')
   /** 이메일을 한 번 내 봤는가. 그 전에는 형식 오류를 보이지 않는다. */
   const [tried, setTried] = useState(false)
@@ -103,15 +110,19 @@ export function WaitlistProvider({
     opener.current?.focus()
   }, [])
 
+  /** 지금까지의 답 전체를 보낸다. "기타"에 적은 글은 그 질문의 답이 기타일 때만 싣는다. */
   const save = (next: Answers, withEmail?: string): Promise<void> => {
-    const body: SaveWaitlistResponseRequest = { locale, headline, ...next }
+    const body: SaveWaitlistResponseRequest = { locale, headline, hero, ...next }
+    for (const question of QUESTIONS) {
+      const text = others[question]?.trim()
+      if (next[question] === OTHER && text) body[`${question}Other`] = text
+    }
     if (withEmail !== undefined) body.email = withEmail
     return saver.current!.save(body)
   }
 
-  /** 답을 바꾸고 바로 저장한다. 실패는 알리지 않는다 — 다음 저장이 전부 다시 싣는다. */
-  const answer = (next: Answers) => {
-    setAnswers(next)
+  /** 실패는 알리지 않는다 — 다음 저장이 전부 다시 싣는다. */
+  const saveQuietly = (next: Answers) => {
     save(next).catch(() => undefined)
   }
 
@@ -141,6 +152,8 @@ export function WaitlistProvider({
 
   const context = useMemo(() => ({ open, cta: copy.cta }), [open, copy.cta])
 
+  const question = QUESTIONS.find((id) => id === step)
+
   return (
     <WaitlistContext.Provider value={context}>
       <div inert={isOpen}>{children}</div>
@@ -148,51 +161,34 @@ export function WaitlistProvider({
         <Dialog label={copy.cta} step={step} onClose={close}>
           <Progress copy={copy} stepIndex={stepIndex} onClose={close} />
 
-          {step === 'savePlaces' && (
-            <QuestionStep
-              question={copy.dialog.savePlaces}
-              chosen={answers.savePlaces}
-              onPick={(key) =>
-                answer({
-                  ...answers,
-                  savePlaces: answers.savePlaces.includes(key)
-                    ? answers.savePlaces.filter((place) => place !== key)
-                    : [...answers.savePlaces, key],
-                })
-              }
-              back={<TextButton disabled>{copy.dialog.back}</TextButton>}
-              next={
-                <Button
-                  disabled={answers.savePlaces.length === 0}
-                  onClick={() => goTo('revisitFrequency')}
-                >
-                  {copy.dialog.next}
-                </Button>
-              }
-            />
-          )}
-
-          {(step === 'revisitFrequency' ||
-            step === 'mostHelpful' ||
-            step === 'willingnessToPay') && (
+          {question !== undefined && (
             <QuestionStep
               // 질문이 바뀌면 새로 그린다 — 앞 질문의 스크롤 위치가 남지 않는다.
-              key={step}
-              question={copy.dialog[step]}
-              chosen={answers[step] === undefined ? [] : [answers[step]]}
+              key={question}
+              copy={copy}
+              question={copy.dialog[question]}
+              chosen={answers[question]}
+              otherText={others[question] ?? ''}
+              canGoBack={stepIndex > 0}
               onPick={(key) => {
-                answer({ ...answers, [step]: key })
+                const next = { ...answers, [question]: key } as Answers
+                setAnswers(next)
+                saveQuietly(next)
                 clearTimeout(advanceTimer.current)
+                // 기타는 적고 나서 "다음"으로 넘어간다.
+                if (key === OTHER) return
                 advanceTimer.current = setTimeout(
                   () => setStep(STEPS[stepIndex + 1]!),
                   AUTO_ADVANCE_MS,
                 )
               }}
-              back={
-                <TextButton onClick={() => goTo(STEPS[stepIndex - 1]!)}>
-                  {copy.dialog.back}
-                </TextButton>
-              }
+              onOtherText={(text) => setOthers({ ...others, [question]: text })}
+              onBack={() => goTo(STEPS[stepIndex - 1]!)}
+              onNext={() => {
+                // 적은 글은 넘어갈 때 저장한다 — 글자마다 보내지 않는다.
+                saveQuietly(answers)
+                goTo(STEPS[stepIndex + 1]!)
+              }}
             />
           )}
 
@@ -208,7 +204,7 @@ export function WaitlistProvider({
                 setSaveFailed(false)
               }}
               onSubmit={submitEmail}
-              onBack={() => goTo('willingnessToPay')}
+              onBack={() => goTo(QUESTIONS.at(-1)!)}
             />
           )}
 
@@ -236,7 +232,6 @@ export function WaitlistProvider({
     </WaitlistContext.Provider>
   )
 }
-
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), a[href]'
 
 /**
@@ -363,40 +358,61 @@ function Progress({
   )
 }
 
-function QuestionStep<Key extends string>({
+const field =
+  'h-[52px] w-full rounded-[14px] border border-muted bg-bg px-4 text-[17px] text-strong placeholder:text-muted'
+
+/**
+ * 하나만 고르는 질문. 고르면 넘어가고, "기타"를 고르면 직접 적는 칸과 "다음"이 나온다.
+ */
+function QuestionStep({
+  copy,
   question,
   chosen,
+  otherText,
+  canGoBack,
   onPick,
-  back,
-  next,
+  onOtherText,
+  onBack,
+  onNext,
 }: {
-  question: { title: string; hint: string; options: { key: Key; label: string }[] }
-  chosen: readonly Key[]
-  onPick: (key: Key) => void
-  back: ReactNode
-  /** 복수 선택 질문만 있다. 하나만 고르는 질문은 고르면 넘어간다. */
-  next?: ReactNode
+  copy: LandingCopy
+  question: { title: string; options: { key: string; label: string }[] }
+  chosen: string | undefined
+  otherText: string
+  canGoBack: boolean
+  onPick: (key: string) => void
+  onOtherText: (text: string) => void
+  onBack: () => void
+  onNext: () => void
 }) {
+  const otherOn = chosen === OTHER
+  const otherInput = useRef<HTMLInputElement>(null)
+
   return (
     <>
       <div className="min-h-0 flex-1 overflow-auto px-6 pt-6 pb-2">
         <h2
           data-step-focus
           tabIndex={-1}
-          className="mb-1.5 text-2xl leading-[1.3] font-bold text-balance text-strong outline-none"
+          className="mb-[47px] text-2xl leading-[1.3] font-bold text-balance text-strong outline-none"
         >
           {question.title}
         </h2>
-        <p className="mb-[18px] min-h-[1lh] text-[15px] text-muted">{question.hint}</p>
         <div role="group" aria-label={question.title} className="flex flex-col gap-2">
           {question.options.map((option) => {
-            const on = chosen.includes(option.key)
+            const on = chosen === option.key
             return (
               <button
                 key={option.key}
                 type="button"
                 aria-pressed={on}
-                onClick={() => onPick(option.key)}
+                onClick={() => {
+                  onPick(option.key)
+                  // 방금 고른 기타: 칸이 그려진 뒤 그리로 커서를 옮긴다.
+                  if (option.key === OTHER) {
+                    requestAnimationFrame(() => otherInput.current?.focus({ preventScroll: true }))
+                  }
+                }}
                 className={`flex min-h-[52px] w-full cursor-pointer items-center justify-between gap-3 rounded-[14px] px-4 py-3 text-left text-[17px] font-medium transition-colors duration-[120ms] ${
                   on ? 'bg-brand text-on-brand' : 'bg-fill text-strong'
                 }`}
@@ -420,15 +436,32 @@ function QuestionStep<Key extends string>({
             )
           })}
         </div>
+        {otherOn && (
+          <input
+            ref={otherInput}
+            type="text"
+            value={otherText}
+            maxLength={WAITLIST_OTHER_MAX_LENGTH}
+            onChange={(event) => onOtherText(event.target.value)}
+            onKeyDown={(event) => {
+              // 한글 조합 중의 Enter는 글자를 확정하는 것이지 넘어가는 것이 아니다.
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) onNext()
+            }}
+            placeholder={copy.dialog.otherPlaceholder}
+            aria-label={copy.dialog.otherPlaceholder}
+            className={`${field} mt-2`}
+          />
+        )}
       </div>
       <div className="flex flex-none items-center justify-between gap-3 px-6 pt-3 pb-6">
-        {back}
-        {next}
+        <TextButton disabled={!canGoBack} onClick={onBack}>
+          {copy.dialog.back}
+        </TextButton>
+        {otherOn && <Button onClick={onNext}>{copy.dialog.next}</Button>}
       </div>
     </>
   )
 }
-
 function EmailStep({
   copy,
   email,
@@ -473,7 +506,7 @@ function EmailStep({
           }}
           aria-invalid={invalid}
           aria-describedby="waitlist-email-help"
-          className="h-[52px] w-full rounded-[14px] border border-muted bg-bg px-4 text-[17px] text-strong placeholder:text-muted"
+          className={field}
         />
         {saveFailed ? (
           <p id="waitlist-email-help" role="alert" className="mt-2 min-h-[1lh] text-sm text-danger">
@@ -488,6 +521,7 @@ function EmailStep({
             {invalid ? dialog.emailError : dialog.emailHelp}
           </p>
         )}
+        <p className="mt-4 text-[13px] leading-normal text-muted">{dialog.privacy}</p>
       </div>
       <div className="flex flex-none items-center justify-between gap-3 px-6 pt-3 pb-6">
         <TextButton onClick={onBack}>{dialog.back}</TextButton>

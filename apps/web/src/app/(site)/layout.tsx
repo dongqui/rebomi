@@ -12,6 +12,17 @@ const pretendard = localFont({
   variable: '--font-pretendard',
 })
 
+// 손글씨 한 줄(저장함 더미 위의 메모)에만 쓴다. Gaegu (SIL OFL 1.1), 한글과 라틴을 나눈 두 파일.
+const gaegu = localFont({
+  src: [
+    { path: '../../fonts/Gaegu-latin-400.woff2', weight: '400' },
+    { path: '../../fonts/Gaegu-korean-400.woff2', weight: '400' },
+  ],
+  display: 'swap',
+  variable: '--font-gaegu',
+  preload: false,
+})
+
 /**
  * 누구나 보는 화면(랜딩)의 최상위 레이아웃. 로그인한 화면은 `(product)` 에 따로 있다 —
  * 그쪽은 아직 디자인을 입히지 않아서 Tailwind의 기본 초기화를 받으면 모습이 바뀐다.
@@ -22,7 +33,7 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
   const locale = pickLocale((await headers()).get('accept-language'))
 
   return (
-    <html lang={locale} className={pretendard.variable}>
+    <html lang={locale} className={`${pretendard.variable} ${gaegu.variable}`}>
       <body>{children}</body>
     </html>
   )

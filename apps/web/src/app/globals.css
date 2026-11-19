@@ -48,6 +48,9 @@
     var(--font-pretendard), Pretendard, -apple-system, BlinkMacSystemFont, system-ui,
     'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', Roboto, sans-serif;
 
+  /* 손글씨 메모. 랜딩의 한 줄에만 쓴다. */
+  --font-hand: var(--font-gaegu), 'Gaegu', 'Comic Sans MS', cursive;
+
   /* TDS의 굵기 단계. Pretendard 가변 글꼴이라 510·590이 그대로 표현된다. */
   --font-weight-medium: 510;
   --font-weight-semibold: 590;

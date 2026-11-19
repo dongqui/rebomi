@@ -1,4 +1,4 @@
-import type { WaitlistHeadline, WaitlistLocale } from '@rebomi/api-contract'
+import type { WaitlistHeadline, WaitlistHero, WaitlistLocale } from '@rebomi/api-contract'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
@@ -9,11 +9,19 @@ const saved: FakeResponse = { status: 204 }
 const UUID =
   /^\/waitlist\/responses\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
+const Q1 = 'Which best describes what you’re doing these days?'
+const Q2 = 'When you save something, what are you hoping to do with it?'
+const Q3 = 'What frustrates you most about the things you save?'
+const Q4 = 'If Rebomi could help you with one thing, what would you want it to be?'
+const EMAIL = 'Where should we send your invite?'
+const OTHER_BOX = 'Tell us in your own words'
+
 function setup(
   options: {
     respond?: (request: FakeRequest, nth: number) => FakeResponse
     locale?: WaitlistLocale
     headline?: WaitlistHeadline
+    hero?: WaitlistHero
   } = {},
 ) {
   let nth = 0
@@ -26,7 +34,8 @@ function setup(
     <WaitlistProvider
       client={fake.api}
       locale={options.locale ?? 'en'}
-      headline={options.headline ?? 'forgot'}
+      headline={options.headline ?? 'progress'}
+      hero={options.hero ?? 'none'}
     >
       <p>page content</p>
       <JoinButton />
@@ -41,32 +50,32 @@ function setup(
 
 type Setup = ReturnType<typeof setup>
 
-/** 첫 질문에서 Instagram을 고르고 두 번째 질문으로 간다. */
+/** 첫 질문에 답해 두 번째 질문으로 간다. */
 async function answerFirst({ user, option }: Setup) {
-  await user.click(option('Instagram'))
-  await user.click(option('Next'))
-  await screen.findByRole('heading', { name: 'How often do you go back to them?' })
+  await user.click(option('Working at a company'))
+  await screen.findByRole('heading', { name: Q2 })
 }
 
 /** 질문 네 개에 모두 답해 이메일 단계까지 간다. */
 async function answerAll(app: Setup) {
   await app.open()
   await answerFirst(app)
-  await app.user.click(app.option('Once in a while'))
-  await screen.findByRole('heading', { name: 'What would help you most?' })
-  await app.user.click(app.option('A few saves brought back each week'))
-  await screen.findByRole('heading', { name: 'If Rebomi did this well, would you pay for it?' })
-  await app.user.click(app.option('Maybe, if I end up using it a lot'))
-  await screen.findByRole('heading', { name: 'Where should we send your invite?' })
+  await app.user.click(app.option('Learn something'))
+  await screen.findByRole('heading', { name: Q3 })
+  await app.user.click(app.option('I forget I saved them at all'))
+  await screen.findByRole('heading', { name: Q4 })
+  await app.user.click(app.option('Picking what’s worth my time right now'))
+  await screen.findByRole('heading', { name: EMAIL })
 }
 
+const base = { locale: 'en', headline: 'progress', hero: 'none' }
+
 const allAnswers = {
-  locale: 'en',
-  headline: 'forgot',
-  savePlaces: ['instagram'],
-  revisitFrequency: 'sometimes',
-  mostHelpful: 'resurfacing',
-  willingnessToPay: 'maybe',
+  ...base,
+  occupation: 'employed',
+  saveIntent: 'learn',
+  frustration: 'forget',
+  wantedHelp: 'pick',
 }
 
 describe('등록 대화상자 열기와 닫기', () => {
@@ -77,11 +86,11 @@ describe('등록 대화상자 열기와 닫기', () => {
     await app.open()
 
     expect(app.dialog().getAttribute('aria-modal')).toBe('true')
-    expect(
-      within(app.dialog()).getByRole('heading', { name: 'Where do your saves pile up?' }),
-    ).toBeDefined()
+    expect(within(app.dialog()).getByRole('heading', { name: Q1 })).toBeDefined()
     expect(within(app.dialog()).getByText('1 of 4')).toBeDefined()
-    expect(within(app.dialog()).getByText('Pick all that apply.')).toBeDefined()
+    // 첫 질문에서는 돌아갈 곳이 없고, 고르면 넘어가므로 "다음"도 없다.
+    expect(app.option('Back')).toHaveProperty('disabled', true)
+    expect(within(app.dialog()).queryByRole('button', { name: 'Next' })).toBeNull()
   })
 
   it('열기만 하고 닫으면 서버로 아무것도 보내지 않는다', async () => {
@@ -122,12 +131,10 @@ describe('등록 대화상자 열기와 닫기', () => {
 
     await app.open()
 
-    expect(
-      within(app.dialog()).getByRole('heading', { name: 'How often do you go back to them?' }),
-    ).toBeDefined()
+    expect(within(app.dialog()).getByRole('heading', { name: Q2 })).toBeDefined()
     await app.user.click(app.option('Back'))
-    expect(app.option('Instagram').getAttribute('aria-pressed')).toBe('true')
-    expect(app.option('YouTube').getAttribute('aria-pressed')).toBe('false')
+    expect(app.option('Working at a company').getAttribute('aria-pressed')).toBe('true')
+    expect(app.option('Freelancing').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('한국어면 한국어 문구로 보인다', async () => {
@@ -136,7 +143,7 @@ describe('등록 대화상자 열기와 닫기', () => {
     await app.user.click(screen.getByRole('button', { name: '대기 명단 등록하기' }))
 
     expect(
-      within(app.dialog()).getByRole('heading', { name: '저장한 것들이 주로 어디에 쌓여 있나요?' }),
+      within(app.dialog()).getByRole('heading', { name: '지금 주로 어떤 일을 하고 있나요?' }),
     ).toBeDefined()
     expect(within(app.dialog()).getByText('4개 중 1번째')).toBeDefined()
   })
@@ -144,10 +151,10 @@ describe('등록 대화상자 열기와 닫기', () => {
 
 describe('답을 고를 때마다 저장한다', () => {
   it('첫 답을 고르면 브라우저가 만든 ID로 응답 저장 요청이 간다', async () => {
-    const app = setup({ locale: 'ko', headline: 'scattered' })
+    const app = setup({ locale: 'ko', headline: 'scattered', hero: 'card' })
     await app.user.click(screen.getByRole('button', { name: '대기 명단 등록하기' }))
 
-    await app.user.click(app.option('인스타그램'))
+    await app.user.click(app.option('프리랜서로 일하고 있어요'))
 
     await waitFor(() => expect(app.requests).toHaveLength(1))
     const [request] = app.requests
@@ -157,68 +164,35 @@ describe('답을 고를 때마다 저장한다', () => {
     expect(request!.body).toEqual({
       locale: 'ko',
       headline: 'scattered',
-      savePlaces: ['instagram'],
+      hero: 'card',
+      occupation: 'freelance',
     })
   })
 
-  it('복수 선택은 고르고 뺄 때마다 그때의 전체를 같은 ID로 보낸다', async () => {
-    const app = setup()
-    await app.open()
-
-    await app.user.click(app.option('Instagram'))
-    await app.user.click(app.option('Browser bookmarks'))
-    await app.user.click(app.option('Instagram'))
-
-    await waitFor(() => expect(app.requests).toHaveLength(3))
-    expect(app.bodies()).toEqual([
-      { locale: 'en', headline: 'forgot', savePlaces: ['instagram'] },
-      { locale: 'en', headline: 'forgot', savePlaces: ['instagram', 'browser'] },
-      { locale: 'en', headline: 'forgot', savePlaces: ['browser'] },
-    ])
-    expect(new Set(app.requests.map((request) => request.path)).size).toBe(1)
-  })
-
-  it('복수 선택 질문은 하나 이상 골라야 다음으로 갈 수 있다', async () => {
-    const app = setup()
-    await app.open()
-    expect(app.option('Next')).toHaveProperty('disabled', true)
-
-    await app.user.click(app.option('X'))
-
-    expect(app.option('Next')).toHaveProperty('disabled', false)
-  })
-
-  it('하나만 고르는 질문은 고르면 저장하고 다음 질문으로 넘어간다', async () => {
+  it('고르면 저장하고 다음 질문으로 넘어간다', async () => {
     const app = setup()
     await app.open()
     await answerFirst(app)
 
-    await app.user.click(app.option('Almost never'))
+    await app.user.click(app.option('Try something'))
 
-    await screen.findByRole('heading', { name: 'What would help you most?' })
+    await screen.findByRole('heading', { name: Q3 })
     expect(within(app.dialog()).getByText('3 of 4')).toBeDefined()
-    expect(app.bodies().at(-1)).toEqual({
-      locale: 'en',
-      headline: 'forgot',
-      savePlaces: ['instagram'],
-      revisitFrequency: 'almost_never',
-    })
+    expect(app.bodies().at(-1)).toEqual({ ...base, occupation: 'employed', saveIntent: 'try' })
   })
 
   it('이전으로 돌아가 답을 바꾸면 바뀐 답이 저장된다', async () => {
     const app = setup()
     await app.open()
     await answerFirst(app)
-    await app.user.click(app.option('Almost never'))
-    await screen.findByRole('heading', { name: 'What would help you most?' })
+    await app.user.click(app.option('Learn something'))
+    await screen.findByRole('heading', { name: Q3 })
 
     await app.user.click(app.option('Back'))
-    expect(app.option('Almost never').getAttribute('aria-pressed')).toBe('true')
-    await app.user.click(app.option('Most weeks'))
+    expect(app.option('Learn something').getAttribute('aria-pressed')).toBe('true')
+    await app.user.click(app.option('Enjoy it later'))
 
-    await waitFor(() =>
-      expect(app.bodies().at(-1)).toMatchObject({ revisitFrequency: 'most_weeks' }),
-    )
+    await waitFor(() => expect(app.bodies().at(-1)).toMatchObject({ saveIntent: 'enjoy' }))
   })
 
   it('네 질문에 답하면 마지막 요청에 네 답이 모두 실리고 이메일 단계가 된다', async () => {
@@ -236,19 +210,18 @@ describe('답을 고를 때마다 저장한다', () => {
     await app.open()
     await answerFirst(app)
 
-    await app.user.click(app.option('Once in a while'))
-    await screen.findByRole('heading', { name: 'What would help you most?' })
-    await app.user.click(app.option('Everything in one place'))
+    await app.user.click(app.option('Learn something'))
+    await screen.findByRole('heading', { name: Q3 })
+    await app.user.click(app.option('Nothing really bothers me'))
 
-    await screen.findByRole('heading', { name: 'If Rebomi did this well, would you pay for it?' })
+    await screen.findByRole('heading', { name: Q4 })
     expect(within(app.dialog()).queryByRole('alert')).toBeNull()
     await waitFor(() => expect(app.requests).toHaveLength(3))
     expect(app.bodies().at(-1)).toEqual({
-      locale: 'en',
-      headline: 'forgot',
-      savePlaces: ['instagram'],
-      revisitFrequency: 'sometimes',
-      mostHelpful: 'one_place',
+      ...base,
+      occupation: 'employed',
+      saveIntent: 'learn',
+      frustration: 'none',
     })
   })
 
@@ -262,9 +235,96 @@ describe('답을 고를 때마다 저장한다', () => {
     await app.open()
     await answerFirst(app)
 
-    await app.user.click(app.option('Most weeks'))
+    await app.user.click(app.option('Keep it for reference'))
 
-    await screen.findByRole('heading', { name: 'What would help you most?' })
+    await screen.findByRole('heading', { name: Q3 })
+  })
+})
+
+describe('기타', () => {
+  it('기타를 고르면 넘어가지 않고, 직접 적는 칸과 "다음"이 나오며 커서가 칸으로 간다', async () => {
+    const app = setup()
+    await app.open()
+    expect(within(app.dialog()).queryByLabelText(OTHER_BOX)).toBeNull()
+
+    await app.user.click(app.option('Other'))
+
+    const box = within(app.dialog()).getByLabelText(OTHER_BOX)
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    expect(app.option('Next')).toHaveProperty('disabled', false)
+    expect(within(app.dialog()).getByRole('heading', { name: Q1 })).toBeDefined()
+    // 고른 것은 바로 저장된다. 적은 글은 아직 없다.
+    expect(app.bodies().at(-1)).toEqual({ ...base, occupation: 'other' })
+  })
+
+  it('적고 "다음"을 누르면 적은 글이 함께 저장되고 다음 질문으로 간다', async () => {
+    const app = setup()
+    await app.open()
+    await app.user.click(app.option('Other'))
+
+    await app.user.type(within(app.dialog()).getByLabelText(OTHER_BOX), '  Raising two kids ')
+    await app.user.click(app.option('Next'))
+
+    await screen.findByRole('heading', { name: Q2 })
+    await waitFor(() =>
+      expect(app.bodies().at(-1)).toEqual({
+        ...base,
+        occupation: 'other',
+        occupationOther: 'Raising two kids',
+      }),
+    )
+  })
+
+  it('칸에서 Enter로도 넘어간다', async () => {
+    const app = setup()
+    await app.open()
+    await app.user.click(app.option('Other'))
+
+    await app.user.type(within(app.dialog()).getByLabelText(OTHER_BOX), 'Between jobs{Enter}')
+
+    await screen.findByRole('heading', { name: Q2 })
+    await waitFor(() =>
+      expect(app.bodies().at(-1)).toMatchObject({ occupationOther: 'Between jobs' }),
+    )
+  })
+
+  it('아무것도 적지 않고도 넘어갈 수 있다 — 적은 글은 보내지 않는다', async () => {
+    const app = setup()
+    await app.open()
+    await app.user.click(app.option('Other'))
+
+    await app.user.click(app.option('Next'))
+
+    await screen.findByRole('heading', { name: Q2 })
+    expect(app.bodies().at(-1)).toEqual({ ...base, occupation: 'other' })
+  })
+
+  it('글자를 적는 동안에는 보내지 않는다', async () => {
+    const app = setup()
+    await app.open()
+    await app.user.click(app.option('Other'))
+    await waitFor(() => expect(app.requests).toHaveLength(1))
+
+    await app.user.type(within(app.dialog()).getByLabelText(OTHER_BOX), 'typing')
+
+    expect(app.requests).toHaveLength(1)
+  })
+
+  it('기타에서 다른 답으로 바꾸면 적은 글을 보내지 않고, 돌아와 기타를 고르면 글이 남아 있다', async () => {
+    const app = setup()
+    await app.open()
+    await app.user.click(app.option('Other'))
+    await app.user.type(within(app.dialog()).getByLabelText(OTHER_BOX), 'Between jobs')
+
+    await app.user.click(app.option('Freelancing'))
+    await screen.findByRole('heading', { name: Q2 })
+    expect(app.bodies().at(-1)).toEqual({ ...base, occupation: 'freelance' })
+
+    await app.user.click(app.option('Back'))
+    expect(within(app.dialog()).queryByLabelText(OTHER_BOX)).toBeNull()
+    await app.user.click(app.option('Other'))
+
+    expect(within(app.dialog()).getByLabelText(OTHER_BOX)).toHaveProperty('value', 'Between jobs')
   })
 })
 
@@ -284,9 +344,17 @@ describe('이메일', () => {
     expect(within(app.dialog()).getByText('Enter a valid email address.')).toBeDefined()
     expect(input.getAttribute('aria-invalid')).toBe('true')
     expect(app.requests).toHaveLength(before)
-    expect(
-      within(app.dialog()).getByRole('heading', { name: 'Where should we send your invite?' }),
-    ).toBeDefined()
+    expect(within(app.dialog()).getByRole('heading', { name: EMAIL })).toBeDefined()
+  })
+
+  it('무엇을 왜 받고, 얼마나 보관하고, 어디로 삭제를 요청하는지 알린다', async () => {
+    const app = setup()
+    await answerAll(app)
+
+    const notice = within(app.dialog()).getByText(/We collect your email and survey answers/)
+
+    expect(notice.textContent).toContain('one year')
+    expect(notice.textContent).toContain('projectn.contact@gmail.com')
   })
 
   it('고쳐 쓰면 오류 표시가 사라진다', async () => {
@@ -373,18 +441,12 @@ describe('키보드', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Join the waitlist' }))
     await user.keyboard('{Enter}')
 
-    // 질문 1 (복수 선택): 첫 선택지를 고르고 "다음"까지 가서 누른다.
-    await user.tab()
-    expect(document.activeElement).toBe(app.option('Instagram'))
-    await user.keyboard(' ')
-    while (document.activeElement !== app.option('Next')) await user.tab()
-    await user.keyboard('{Enter}')
-
-    // 질문 2~4: 넘어오면 첫 Tab이 첫 선택지로 간다.
+    // 질문마다: 넘어오면 첫 Tab이 첫 선택지로 간다.
     for (const [title, first] of [
-      ['How often do you go back to them?', 'Almost never'],
-      ['What would help you most?', 'A short summary of each save'],
-      ['If Rebomi did this well, would you pay for it?', 'Yes, a few dollars a month'],
+      [Q1, 'Studying or learning new skills'],
+      [Q2, 'Learn something'],
+      [Q3, 'I forget I saved them at all'],
+      [Q4, 'Rediscovering good things I’d forgotten about'],
     ] as const) {
       await screen.findByRole('heading', { name: title })
       await user.tab()
@@ -393,18 +455,17 @@ describe('키보드', () => {
     }
 
     // 이메일: 넘어오면 입력란에 포커스가 있다.
-    await screen.findByRole('heading', { name: 'Where should we send your invite?' })
+    await screen.findByRole('heading', { name: EMAIL })
     expect(document.activeElement).toBe(within(app.dialog()).getByLabelText('Email'))
     await user.keyboard('someone@example.com{Enter}')
 
     await screen.findByRole('heading', { name: 'You’re on the list.' })
     expect(app.bodies().at(-1)).toEqual({
-      locale: 'en',
-      headline: 'forgot',
-      savePlaces: ['instagram'],
-      revisitFrequency: 'almost_never',
-      mostHelpful: 'summary',
-      willingnessToPay: 'yes',
+      ...base,
+      occupation: 'studying',
+      saveIntent: 'learn',
+      frustration: 'forget',
+      wantedHelp: 'rediscover',
       email: 'someone@example.com',
     })
   })

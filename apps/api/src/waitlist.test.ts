@@ -62,7 +62,7 @@ function newId(): string {
   return id
 }
 
-const first = { locale: 'ko', headline: 'forgot', savePlaces: ['instagram'] }
+const first = { locale: 'ko', headline: 'progress', hero: 'none', occupation: 'employed' }
 
 /** 인증 헤더 없이 보낸다 — 이 경로는 로그인을 요구하지 않는다. */
 const put = (app: FastifyInstance, id: string, payload: unknown) =>
@@ -87,7 +87,8 @@ describe('PUT /waitlist/responses/:id', () => {
     const response = await put(app, id, {
       locale: 'en',
       headline: 'scattered',
-      savePlaces: ['instagram', 'browser'],
+      hero: 'card',
+      occupation: 'freelance',
     })
 
     expect(response.statusCode).toBe(204)
@@ -95,10 +96,12 @@ describe('PUT /waitlist/responses/:id', () => {
       id,
       locale: 'en',
       headline: 'scattered',
-      savePlaces: ['instagram', 'browser'],
-      revisitFrequency: null,
-      mostHelpful: null,
-      willingnessToPay: null,
+      hero: 'card',
+      occupation: 'freelance',
+      occupationOther: null,
+      saveIntent: null,
+      frustration: null,
+      wantedHelp: null,
       email: null,
     })
   })
@@ -110,9 +113,9 @@ describe('PUT /waitlist/responses/:id', () => {
 
     const response = await put(app, id, {
       ...first,
-      savePlaces: ['instagram', 'youtube'],
-      revisitFrequency: 'sometimes',
-      mostHelpful: 'search',
+      occupation: 'creator',
+      saveIntent: 'learn',
+      frustration: 'forget',
     })
 
     expect(response.statusCode).toBe(204)
@@ -122,38 +125,46 @@ describe('PUT /waitlist/responses/:id', () => {
       .where(eq(schema.waitlistResponses.id, id))
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
-      savePlaces: ['instagram', 'youtube'],
-      revisitFrequency: 'sometimes',
-      mostHelpful: 'search',
-      willingnessToPay: null,
+      occupation: 'creator',
+      saveIntent: 'learn',
+      frustration: 'forget',
+      wantedHelp: null,
     })
   })
 
-  it('답을 바꾸거나 복수 선택에서 빼면 그대로 반영된다', async () => {
+  it('"기타"를 고르고 적은 글은 앞뒤 공백을 떼고 남는다', async () => {
     const app = newApp()
     const id = newId()
-    await put(app, id, {
-      ...first,
-      savePlaces: ['instagram', 'youtube', 'x'],
-      revisitFrequency: 'sometimes',
+
+    await put(app, id, { ...first, occupation: 'other', occupationOther: '  육아 중이에요 ' })
+
+    expect(await rowOf(id)).toMatchObject({
+      occupation: 'other',
+      occupationOther: '육아 중이에요',
     })
+  })
 
-    await put(app, id, { ...first, savePlaces: ['x'], revisitFrequency: 'most_weeks' })
+  it('"기타"에서 다른 답으로 바꾸면 적어 둔 글은 지워진다', async () => {
+    const app = newApp()
+    const id = newId()
+    await put(app, id, { ...first, occupation: 'other', occupationOther: '육아 중이에요' })
 
-    expect(await rowOf(id)).toMatchObject({ savePlaces: ['x'], revisitFrequency: 'most_weeks' })
+    await put(app, id, { ...first, occupation: 'studying', occupationOther: '육아 중이에요' })
+
+    expect(await rowOf(id)).toMatchObject({ occupation: 'studying', occupationOther: null })
   })
 
   it('보내지 않은 답은 비운다 — 요청이 지금까지의 답 전체다', async () => {
     const app = newApp()
     const id = newId()
-    await put(app, id, { ...first, revisitFrequency: 'sometimes', willingnessToPay: 'yes' })
+    await put(app, id, { ...first, saveIntent: 'learn', wantedHelp: 'find' })
 
-    await put(app, id, { ...first, savePlaces: [] })
+    await put(app, id, { locale: 'ko', headline: 'progress', hero: 'none' })
 
     expect(await rowOf(id)).toMatchObject({
-      savePlaces: [],
-      revisitFrequency: null,
-      willingnessToPay: null,
+      occupation: null,
+      saveIntent: null,
+      wantedHelp: null,
     })
   })
 
@@ -162,9 +173,9 @@ describe('PUT /waitlist/responses/:id', () => {
     const id = newId()
     const answers = {
       ...first,
-      revisitFrequency: 'almost_never',
-      mostHelpful: 'resurfacing',
-      willingnessToPay: 'maybe',
+      saveIntent: 'work',
+      frustration: 'too_many',
+      wantedHelp: 'rediscover',
     }
     await put(app, id, answers)
 
@@ -182,9 +193,9 @@ describe('PUT /waitlist/responses/:id', () => {
     const id = newId()
     await put(app, id, { ...first, email: 'kept@example.com' })
 
-    await put(app, id, { ...first, willingnessToPay: 'no' })
+    await put(app, id, { ...first, wantedHelp: 'pick' })
 
-    expect(await rowOf(id)).toMatchObject({ email: 'kept@example.com', willingnessToPay: 'no' })
+    expect(await rowOf(id)).toMatchObject({ email: 'kept@example.com', wantedHelp: 'pick' })
   })
 
   it('이메일을 낸 뒤에도 같은 ID로 이메일을 바꿀 수 있다', async () => {
@@ -219,13 +230,12 @@ describe('PUT /waitlist/responses/:id', () => {
     const before = await rowOf(id)
     await new Promise((resolve) => setTimeout(resolve, 15))
 
-    await put(app, id, { ...first, revisitFrequency: 'sometimes' })
+    await put(app, id, { ...first, saveIntent: 'try' })
 
     const after = await rowOf(id)
     expect(after!.createdAt).toEqual(before!.createdAt)
     expect(after!.updatedAt.getTime()).toBeGreaterThan(before!.updatedAt.getTime())
   })
-
   it('성공 응답은 본문이 없다 — 저장된 이메일과 답을 돌려주지 않는다', async () => {
     const app = newApp()
     const id = newId()
@@ -261,12 +271,13 @@ describe('PUT /waitlist/responses/:id', () => {
   it.each([
     ['이메일 형식', { ...first, email: 'not-an-email' }],
     ['빈 이메일', { ...first, email: '   ' }],
-    ['정의되지 않은 답 키', { ...first, mostHelpful: 'tags' }],
-    ['정의되지 않은 쌓이는 곳', { ...first, savePlaces: ['tiktok'] }],
-    ['같은 값 두 번', { ...first, savePlaces: ['x', 'x'] }],
+    ['정의되지 않은 답 키', { ...first, wantedHelp: 'tags' }],
+    ['여러 개를 고른 답', { ...first, occupation: ['employed', 'creator'] }],
+    ['너무 긴 기타 글', { ...first, occupation: 'other', occupationOther: 'a'.repeat(501) }],
+    ['모르는 첫 화면 그림', { ...first, hero: 'video' }],
     ['모르는 언어', { ...first, locale: 'ja' }],
     ['모르는 헤드라인', { ...first, headline: 'other' }],
-    ['언어 없음', { headline: 'forgot', savePlaces: [] }],
+    ['언어 없음', { headline: 'progress', hero: 'none' }],
     ['빈 본문', {}],
   ])('%s: 400 VALIDATION_FAILED이고 저장되지 않는다', async (_name, payload) => {
     const app = newApp()
@@ -282,12 +293,12 @@ describe('PUT /waitlist/responses/:id', () => {
   it('잘못된 요청은 이미 있는 응답을 바꾸지 않는다', async () => {
     const app = newApp()
     const id = newId()
-    await put(app, id, { ...first, revisitFrequency: 'sometimes' })
+    await put(app, id, { ...first, saveIntent: 'learn' })
 
-    const response = await put(app, id, { ...first, revisitFrequency: 'daily' })
+    const response = await put(app, id, { ...first, saveIntent: 'hoard' })
 
     expect(response.statusCode).toBe(400)
-    expect((await rowOf(id))?.revisitFrequency).toBe('sometimes')
+    expect((await rowOf(id))?.saveIntent).toBe('learn')
   })
 
   it.each(['not-a-uuid', '123', `${randomUUID()}x`])(
@@ -320,11 +331,11 @@ describe('PUT /waitlist/responses/:id', () => {
       expect(response.statusCode).toBe(204)
     }
 
-    const response = await put(app, id, { ...first, revisitFrequency: 'sometimes' })
+    const response = await put(app, id, { ...first, saveIntent: 'learn' })
 
     expect(response.statusCode).toBe(429)
     expect(errorCode(response)).toBe('RATE_LIMITED')
-    expect((await rowOf(id))?.revisitFrequency).toBeNull()
+    expect((await rowOf(id))?.saveIntent).toBeNull()
   })
 
   it('한도는 이 경로에만 걸린다', async () => {
