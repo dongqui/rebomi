@@ -31,6 +31,8 @@
   --rb-brand-text: light-dark(rgb(39, 63, 199), rgb(157, 180, 255));
   --rb-brand-weak: light-dark(rgba(39, 63, 199, 0.1), rgba(157, 180, 255, 0.14));
   --rb-focus: light-dark(rgba(39, 63, 199, 0.6), rgba(157, 180, 255, 0.7));
+  /* 검색 결과에서 일치한 글자의 바탕. */
+  --rb-mark: light-dark(rgba(39, 63, 199, 0.14), rgba(157, 180, 255, 0.2));
   --rb-danger-text: light-dark(rgb(228, 41, 57), rgb(250, 97, 109));
   --rb-dim: light-dark(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.56));
 }
@@ -76,6 +78,7 @@
   --color-link: var(--rb-brand-text);
   --color-link-weak: var(--rb-brand-weak);
   --color-focus: var(--rb-focus);
+  --color-mark: var(--rb-mark);
   --color-danger: var(--rb-danger-text);
   --color-dim: var(--rb-dim);
 }

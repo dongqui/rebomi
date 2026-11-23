@@ -6,13 +6,15 @@ import { SessionProvider } from '@/auth/session'
 import type { Locale } from '@/lib/locale'
 import { AppShell } from '@/shell/app-shell'
 import { LocaleProvider } from '@/shell/locale-context'
+import { SearchProvider } from '@/search/search-provider'
 import { errorBody, fakeApi, refreshed, type FakeRequest, type FakeResponse } from '@/test/fake-api'
+import { ToastProvider } from '@/ui/toast'
 import { HomeScreen } from './home-screen'
 import { LibraryProvider } from './library-provider'
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app',
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }))
 
 /** 화면이 "지금"으로 삼는 시각. 아래 `content()` 의 저장 시각에서 30초 뒤다. */
@@ -86,11 +88,15 @@ async function setup(routes: Routes, options: { locale?: Locale; narrow?: boolea
   render(
     <LocaleProvider locale={options.locale ?? 'ko'}>
       <SessionProvider client={fake.api} tokens={fake.tokens}>
-        <LibraryProvider client={fake.api} pollMs={20}>
-          <AppShell>
-            <HomeScreen now={() => NOW} />
-          </AppShell>
-        </LibraryProvider>
+        <ToastProvider>
+          <LibraryProvider client={fake.api} pollMs={20}>
+            <SearchProvider client={fake.api}>
+              <AppShell>
+                <HomeScreen now={() => NOW} />
+              </AppShell>
+            </SearchProvider>
+          </LibraryProvider>
+        </ToastProvider>
       </SessionProvider>
     </LocaleProvider>,
   )
