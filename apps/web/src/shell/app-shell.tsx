@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSyncExternalStore, type ReactNode } from 'react'
 import { useLibraryContext } from '@/library/library-provider'
+import { SEARCH_PATH } from '@/search/query'
+import { SearchField } from '@/search/search-field'
 import { Button } from '@/ui/buttons'
 import { useCopy } from './locale-context'
 import { SettingsMenu } from './settings-menu'
@@ -31,14 +33,15 @@ function useWide(): boolean {
 }
 
 const HOME_ICON = 'M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z'
+const SEARCH_ICON = 'M10.5 3a7.5 7.5 0 1 0 0 15a7.5 7.5 0 0 0 0-15zM16 16l5 5'
 
 const Brand = () => <div className="text-xl font-bold tracking-[-0.01em] text-strong">Rebomi</div>
 
 /**
  * `/app` 아래 화면들의 공통 틀: 내비게이션과 상단 영역 (디자인 RebomiWeb).
  *
- * 디자인의 내비에는 검색·보관함이 있고 상단에는 검색창이 있다. 그 기능이 붙을 때 여기에
- * 항목으로 더한다 — 눌러도 되지 않는 자리는 두지 않는다.
+ * 상단 검색창은 어느 화면에서나 보인다. 디자인의 내비에는 보관함도 있다. 그 기능이 붙을 때
+ * 여기에 항목으로 더한다 — 눌러도 되지 않는 자리는 두지 않는다.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const copy = useCopy()
@@ -46,7 +49,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const { openSaveLink } = useLibraryContext()
 
-  const items = [{ href: '/app', label: copy.nav.home, icon: HOME_ICON }]
+  const home = { href: '/app', label: copy.nav.home, icon: HOME_ICON }
+  // 좁은 화면의 탭에는 검색이 없다 (디자인). 검색창이 늘 보여서 따로 갈 필요가 없다.
+  const items = wide
+    ? [home, { href: SEARCH_PATH, label: copy.nav.search, icon: SEARCH_ICON }]
+    : [home]
 
   const saveButton = (
     <Button variant="weak" size="M" onClick={openSaveLink}>
@@ -98,7 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 px-4 pt-4 pb-3 wide:gap-4 wide:px-8">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-4 pb-3 wide:gap-x-4 wide:px-8">
           {!wide && (
             <>
               <Brand />
@@ -121,6 +128,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </nav>
             </>
           )}
+          {/* 아주 좁으면 검색창이 아래 줄을 통째로 쓴다. */}
+          <SearchField className="order-last basis-full roomy:order-none roomy:max-w-[560px] roomy:flex-1 roomy:basis-0" />
           <div className="ml-auto flex items-center gap-2">
             {saveButton}
             {!wide && <SettingsMenu variant="icon" />}

@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 /*
  * 디자인이 쓰는 TDS Mobile 컴포넌트 가운데 필요한 것만 웹용으로 옮겼다.
  * 치수는 디자인 시스템의 값 그대로다 (Button L: 높이 48·모서리 14, Button M: 38·12,
- * IconButton M: 38·13).
+ * Button S: 32·10, IconButton M: 38·13, IconButton S: 32·10).
  * TDS는 누를 때 색을 바꾸지 않고 덮개를 씌운다 — `after:` 가 그 덮개다.
  */
 
@@ -17,6 +17,7 @@ const pressLayer =
 const BUTTON_SIZES = {
   L: 'h-12 rounded-[14px] px-4 text-[17px]',
   M: 'h-[38px] rounded-xl px-3.5 text-[15px]',
+  S: 'h-8 rounded-[10px] px-3 text-[13px]',
 }
 
 /** 채운 버튼. `fill` 은 먹색 주 버튼, `weak` 는 옅은 회색 보조 버튼이다. */
@@ -58,13 +59,16 @@ export function TextButton({ type = 'button', children, ...rest }: ButtonProps) 
 /** 아이콘만 있는 버튼 (닫기, 설정). 이름은 `aria-label` 로 준다. */
 export function IconButton({
   type = 'button',
+  size = 'M',
   children,
   ...rest
-}: ButtonProps & { 'aria-label': string }) {
+}: ButtonProps & { 'aria-label': string; size?: 'M' | 'S' }) {
   return (
     <button
       type={type}
-      className={`${pressLayer} flex size-[38px] flex-none cursor-pointer items-center justify-center rounded-[13px] text-icon after:bg-fill-pressed`}
+      className={`${pressLayer} ${
+        size === 'M' ? 'size-[38px] rounded-[13px]' : 'size-8 rounded-[10px]'
+      } flex flex-none cursor-pointer items-center justify-center text-icon after:bg-fill-pressed`}
       {...rest}
     >
       {children}

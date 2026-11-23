@@ -26,6 +26,10 @@ export type Library = {
   loadMore(): void
   /** 저장한다. 새로 생겼으면 목록 맨 위에 넣는다. 실패하면 던진다. */
   save(url: string): Promise<CreateContentResponse>
+  /** 다른 화면에서 바뀐 콘텐츠를 목록에 반영한다 (보관). 목록에 없으면 아무 일도 없다. */
+  replace(content: Content): void
+  /** 다른 화면에서 휴지통으로 간 콘텐츠를 목록에서 뺀다. */
+  remove(id: string): void
 }
 
 const isPending = (content: Content) => content.metadataStatus === 'pending'
@@ -106,6 +110,14 @@ export function useLibrary(client: LibraryClient, pollMs: number): Library {
     [client],
   )
 
+  const replace = useCallback((content: Content) => {
+    setItems((current) => current.map((item) => (item.id === content.id ? content : item)))
+  }, [])
+
+  const remove = useCallback((id: string) => {
+    setItems((current) => current.filter((item) => item.id !== id))
+  }, [])
+
   // 타이머가 매번 최신 목록을 보게 한다. 목록이 바뀔 때마다 타이머를 다시 걸지 않는다.
   const itemsRef = useRef(items)
   useEffect(() => {
@@ -163,5 +175,7 @@ export function useLibrary(client: LibraryClient, pollMs: number): Library {
     reload,
     loadMore,
     save,
+    replace,
+    remove,
   }
 }
