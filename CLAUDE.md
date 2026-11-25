@@ -17,7 +17,7 @@
 | --- | --- |
 | `docs/product.md` | 제품 기준: 원칙, P0/P1/P2, 단계·게이트, 지표·가설, **미결정 사항(D-xx)** |
 | `docs/architecture.md` | 실제 구성과 구현 상태, 패키지 경계, 공통 상태, 데이터 흐름, 비용 통제, 확정 기술 vs 후보 |
-| `docs/features/*.md` | 기능 PRD: account, capture, import, summary, search, resurfacing, library, billing, waitlist. 요구사항 ID(`CAP-1`)와 완료 조건 |
+| `docs/features/*.md` | 기능 PRD: account, capture, import, summary, search, resurfacing, library, billing, waitlist, mypage. 요구사항 ID(`CAP-1`)와 완료 조건 |
 | `docs/workflow/github.md` | Issue·라벨·브랜치·PR·완료 기준 |
 | `docs/superpowers/specs|plans/` | Superpowers 설계·계획 |
 | `docs/PRD-v0.5.md` | 이력용 원본. 기준이 아니다. 고치지 않는다 |
