@@ -15,7 +15,7 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `apps/worker` | 잡 컨슈머 + 스케줄러 | pg-boss 12, @mozilla/readability, linkedom | **구현됨(범위 작음).** `content-process` 큐를 소비해 페이지를 가져오고 제목·설명·이미지·본문을 채운다(§5). `noop` 큐와 1분 주기 스케줄. 요약·임베딩·링크 생존 확인·재노출 잡은 없음 |
 | `apps/web` | 웹 앱 | Next.js 16 (App Router), React 19 | **구현됨(범위 작음).** `/`는 누구에게나 보이는 대기 명단 랜딩이다(§8). 랜딩의 설문 응답을 받는 서버 경로 `/api/waitlist/responses/:id`가 있다(§8). 로그인 화면(`/login`, Google·Apple)과 세션 유지·로그아웃(§3). 모바일 앱의 로그인을 중계하는 경로 `/login/app/start`·`/login/app/return`이 있다(§3). 로그인해야 보이는 `/app`은 디자인(RebomiWeb)의 틀을 갖는다: 넓은 화면은 사이드바, 860px 이하는 상단 바, 상단의 검색창과 "링크 저장"(대화상자), 설정 자리의 메뉴(테마·로그아웃). 홈은 최근 저장 목록과 첫 사용 안내다(§5). 검색 화면(`/app/search`)은 키워드 검색 결과와 결과에서의 보관·삭제·삭제 되돌리기다(§5). 재노출 카드, 보관함·Inbox·정리·휴지통·설정 화면, 자세히 보기, 정렬, 요약 표시는 없음. 스타일은 Tailwind CSS 4이고 랜딩과 `/app`에 적용돼 있다 — 로그인 화면은 토큰의 배경·글꼴만 따른다. 화면 언어(ko/en)는 `/app`·`/login`에서 요청의 `Accept-Language`로 정하고(랜딩은 영어 고정), 테마는 `/app`에서 고른 값(기기 설정·라이트·다크)을 브라우저에 저장해 `<html data-theme>`로 적용한다(랜딩은 늘 기기 설정). 토큰은 `light-dark()`로 한 번만 정의한다(`apps/web/src/app/globals.css`) |
 | `apps/extension` | Chrome 확장 | Vite 8 + @crxjs/vite-plugin, MV3, React 19 | **원클릭 저장.** 팝업을 열면 웹 로그인을 재사용해(§3) 지금 탭의 제목·설명·대표 이미지·본문을 뽑아 저장하고 결과와 추출 수준을 보인다(§5). 권한은 `activeTab`·`scripting`과 API 오리진. background·상시 content script·단축키·우클릭 메뉴 없음 |
-| `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88 | **골격만.** 단일 `App.tsx`가 `/health`를 호출. 내비게이션, 공유 수신(Share Extension·Share Intent), 푸시, 네이티브 프로젝트(prebuild) 없음 |
+| `apps/mobile` | iOS·Android | Expo SDK 58, React Native 0.88, expo-router | **로그인만.** 로그인 화면(디자인 RebomiLogin, Google·Apple — 시스템 브라우저 창에서 웹을 거친다), 세션 유지·로그아웃(§3). 로그인한 뒤에는 자리만 있는 화면 하나다. 화면은 `app/`(expo-router), 로직은 `src/`. 밝은/어두운 화면과 한국어/영어는 기기 설정을 따른다. 네이티브 프로젝트(`android/`·`ios/`)는 저장소에 두지 않고 `expo prebuild`로 만든다 — 앱 식별자 `app.rebomi`, 딥링크 scheme `rebomi`. Expo Go가 아니라 개발 빌드(`expo-dev-client`)로 띄운다. 홈·탭, 공유 수신(Share Extension·Share Intent), 푸시 없음. Android 에뮬레이터에서만 확인했다 — iOS는 빌드해 보지 않았다 |
 | `apps/e2e` | 연결 테스트 | Vitest | **구현됨(범위 작음).** 실제 api + worker + Postgres를 한 프로세스에 띄워 저장 → 목록(처리 중) → 워커 처리 → 목록(완료·추출 수준)을 `api-client`로 확인하는 테스트와, 본문과 함께 저장하면 워커가 페이지를 요청하지 않고 완료하는지 확인하는 테스트, 저장 → 보관 → 삭제 → 휴지통 목록 → 복구를 확인하는 테스트. 배포되지 않는다. api·worker는 이를 위해 `buildApp`·`startJobQueue`(api), `startWorker`·처리 핸들러(worker)를 패키지 입구로 내보낸다. 브라우저 E2E는 없음 |
 | `packages/api-contract` | 요청·응답 Zod 스키마 | Zod 4 | **구현됨(범위 작음).** health 응답, 공통 에러 코드·에러 바디, 로그인·갱신·로그아웃 계약, 콘텐츠·저장 요청/응답·목록 쿼리/응답 스키마, 검색 요청/응답(매칭 근거 포함) 스키마, 대기 명단 설문 응답 저장 요청과 답의 고정 키 |
 | `packages/api-client` | 타입 세이프 HTTP 클라이언트 | fetch만 사용 | **구현됨(범위 작음).** `health()`, `login()`, `refresh()`, `logout()`, `saveContent()`, `listContents()`, `getContent()`, `archiveContent()`·`trashContent()`·`restoreContent()`, `searchContents()`, `saveWaitlistResponse()`(토큰 없이 보낸다). 타임아웃, `tokenStore`, 액세스 토큰 만료 시 자동 갱신, `ApiError` 변환 |
@@ -24,8 +24,8 @@ pnpm 11 + Turborepo 모노레포, TypeScript strict ESM, Node 22.
 | `packages/config` | tsconfig·eslint·prettier 공유 | — | 구현됨 |
 | `docker/` | Postgres 이미지(PGroonga + pgvector) | compose | 구현됨 |
 
-- **인증: 서버, `api-client`, 웹, 확장이 구현됨(§3).** 모바일의 로그인과 토큰 보관은 없다. 콘텐츠 라우트는 `requireAuth`를 지난다.
-- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`은 컴포넌트 테스트(Testing Library + jsdom)가 있고 `fetch`만 가짜로 바꿔 실제 `api-client`를 통과시킨다. `extension`도 같은 방식의 팝업 테스트와 추출 함수 테스트(jsdom)가 있다. `mobile`에는 자동 테스트가 없다. E2E 없음.
+- **인증: 서버, `api-client`, 웹, 확장, 모바일이 구현됨(§3).** 콘텐츠 라우트는 `requireAuth`를 지난다.
+- **테스트:** Vitest. `core`, `db`, `api`, `api-client`, `worker`에 있다. DB 테스트는 실제 Postgres를 쓴다. `web`은 컴포넌트 테스트(Testing Library + jsdom)가 있고 `fetch`만 가짜로 바꿔 실제 `api-client`를 통과시킨다. `extension`도 같은 방식의 팝업 테스트와 추출 함수 테스트(jsdom)가 있다. `mobile`은 React Native를 불러오지 않는 로직(토큰 저장소, 세션, 로그인 주소 해석)만 Vitest로 테스트한다 — `fetch`와 보안 저장소만 가짜다. 화면 컴포넌트 테스트는 없다. E2E 없음.
 - **CI:** `.github/workflows/ci.yml`이 push·PR마다 Postgres 이미지 빌드 → migrate → lint → typecheck → test → build를 돌린다. 모바일 네이티브 빌드(EAS) 없음.
 - **환경 설정:** 루트 `.env` 하나(`.env.example`). 값이 없으면 각 앱이 기동 시 실패한다. 예외는 `GOOGLE_CLIENT_IDS`·`APPLE_CLIENT_IDS`로, 비어 있어도 API는 뜨고 그 제공자의 로그인만 503이다. 웹은 `NEXT_PUBLIC_API_BASE_URL`·`NEXT_PUBLIC_GOOGLE_CLIENT_ID`·`NEXT_PUBLIC_APPLE_CLIENT_ID` 중 하나라도 없으면 dev·build가 실패한다(`next.config.ts`). CI는 두 클라이언트 ID를 자리 채움 값으로 준다.
 - **배포 (2026-11-19): 랜딩과 설문만.** `https://rebomi.app`(Vercel 프로젝트 `rebomi`, Root Directory `apps/web`, 빌드 명령은 `apps/web/vercel.json`)에 웹이 올라가 있다. API 서버·워커는 배포돼 있지 않아 `/login`·`/app`은 떠도 동작하지 않는다. 설문 응답은 Supabase 프로젝트 `rebomi`의 `waitlist_responses`에 쌓인다(§8). 그 DB에는 이 테이블 하나만 손으로 만들었다 — 마이그레이션 기록(`drizzle.__drizzle_migrations`)이 없으므로, 나머지 스키마를 그 DB에 올릴 때는 `pnpm db:migrate`를 그대로 돌리지 말고 이 테이블을 먼저 정리한다. 테이블에는 RLS를 켜고 정책을 두지 않아 Supabase Data API로는 읽거나 쓸 수 없다(웹은 DB에 직접 연결한다). Vercel 환경변수: `DATABASE_URL`(Supabase 연결 문자열), `NEXT_PUBLIC_API_BASE_URL=https://rebomi.app/api`, 두 로그인 클라이언트 ID는 자리 채움 값, `ENABLE_EXPERIMENTAL_COREPACK=1`(pnpm 버전을 `packageManager`로 맞춘다). Vercel 프로젝트는 GitHub 저장소에 연결돼 있다 — `main`에 병합하면 운영에, 다른 브랜치에 올리면 미리보기에 배포된다. 손으로 올릴 때는 저장소 루트에서 `npx vercel@latest deploy --prod`다. 올리지 않을 파일은 `.vercelignore`에 있다.
@@ -52,11 +52,11 @@ mobile ────┘                                  │ └→ core
 | --- | --- | --- |
 | Google·Apple 신원 토큰 검증, 계정 생성·조회, 액세스·갱신 토큰 발급·갱신·폐기 | `apps/api` — `routes/auth.ts`, `auth/*`. 외부 인증 서비스를 쓰지 않고 직접 구현한다 | 구현됨 |
 | 요청의 사용자 식별 | `apps/api/src/auth.ts`의 `requireAuth`(`app.requireAuth`). 통과한 요청은 `request.userId`를 가진다 | 구현됨. 콘텐츠 라우트에 적용 |
-| 토큰 보관·전달, 만료 시 자동 갱신 | 각 클라이언트가 `api-client`의 `tokenStore`(`get`/`set`)를 구현 (모바일 `SecureStore`). 웹과 확장은 메모리 + 웹의 쿠키 | `api-client`와 웹(`apps/web/src/auth/token-store.ts`) 구현됨. 확장·모바일 저장소 없음 |
+| 토큰 보관·전달, 만료 시 자동 갱신 | 각 클라이언트가 `api-client`의 `tokenStore`(`get`/`set`)를 구현 (모바일 `SecureStore`). 웹과 확장은 메모리 + 웹의 쿠키 | `api-client`, 웹(`apps/web/src/auth/token-store.ts`), 모바일(`apps/mobile/src/auth/token-store.ts`) 구현됨. 확장은 저장소가 없다(아래 "확장의 로그인") |
 | 공유 확장과 메인 앱의 세션 공유 | iOS App Group, Android 공유 저장소 **[원문]** | 없음 |
 | 기기 간 동기화 | 서버가 단일 원본. 클라이언트는 서버 상태를 조회한다 **[제안]** — 오프라인 편집·충돌 해결은 요구되지 않았다 | 없음 |
 
-로그인은 Google·Apple 소셜 로그인이고, 검증된 이메일이 같으면 같은 계정이다. 제품 규칙은 [account](features/account.md) §4에 있다. 확장은 웹 로그인을 재사용한다(account ACC-9) — 방법은 아래 "확장의 로그인"에 있다. 모바일은 Google·Apple을 웹과 똑같이 제공하고 Google은 네이티브 로그인이다(account §4, 2026-11-24) — 구현은 아직 없다. "동기화"의 반영 시점은 **D-08**로 남아 있다.
+로그인은 Google·Apple 소셜 로그인이고, 검증된 이메일이 같으면 같은 계정이다. 제품 규칙은 [account](features/account.md) §4에 있다. 확장은 웹 로그인을 재사용한다(account ACC-9) — 방법은 아래 "확장의 로그인"에 있다. 모바일은 Google·Apple을 웹과 똑같이 제공하고, 로그인은 시스템 브라우저 창에서 하며 웹이 제공자와의 절차를 맡는다(account §4, 2026-11-24) — 아래 "모바일의 로그인과 세션". "동기화"의 반영 시점은 **D-08**로 남아 있다.
 
 **웹의 로그인과 세션 (2026-11-13)** — `apps/web/src/auth/`.
 
@@ -82,6 +82,16 @@ mobile ────┘                                  │ └→ core
 - 웹에서 로그아웃하면 쿠키가 지워지고 갱신 토큰이 폐기되므로 확장도 다음에 열 때 로그인이 필요한 상태다. 확장에는 로그아웃이 없다.
 - 저장도 팝업 안에서 끝나므로 팝업 밖(background)에서 토큰을 나눠 쓰지 않는다.
 - 아직 없는 것: 확장 ID 고정(매니페스트 `key`) — 지금은 unpacked 경로에서 생긴 ID를 `CORS_ORIGINS`에 직접 넣는다.
+
+**모바일의 로그인과 세션 (2026-11-24)** — `apps/mobile/src/auth/`.
+
+- 앱에는 제공자의 로그인 SDK도 클라이언트 ID도 없다. 로그인 화면의 버튼이 시스템 브라우저 창(Android Custom Tab, iOS ASWebAuthenticationSession — 앱 안에 심는 웹뷰가 아니다)으로 웹의 `<EXPO_PUBLIC_WEB_BASE_URL>/login/app/start`를 열고, 웹이 제공자의 로그인을 거쳐 `rebomi://login#provider=…&id_token=…&state=…`로 돌려준다. 앱은 자기가 만든 `state`와 같을 때만 그 신원 토큰으로 `api-client`의 `login()`을 부른다(`session: 'body'`).
+- 갱신 토큰은 기기의 보안 저장소(`expo-secure-store`, 키 `rebomi.refresh-token`)에만 둔다. 액세스 토큰은 메모리에만 두고, 앱을 다시 열면 `refresh()`로 새로 받는다.
+- 세션 상태는 웹과 같은 넷이다(`checking`·`signed-in`·`signed-out`·`unreachable`). 상태를 쥔 것은 React를 모르는 `session-store.ts`이고 화면은 그것을 구독한다. 갱신이 거부되면(401·403, 저장된 갱신 토큰 없음) 로그인 화면으로, 서버에 닿지 못하면 로그아웃시키지 않고 오류와 다시 시도를 보인다. 사용 중에 갱신이 거부되면 `api-client`가 토큰을 지우고, 세션이 토큰 저장소를 구독해 로그아웃 상태로 바꾼다.
+- 화면 전환은 expo-router의 `Stack.Protected`가 한다 — `signed-in`일 때만 `(app)`의 화면이 있고, 그 밖의 상태는 모두 `login`이 그린다.
+- 로그인 수단은 목록(`LoginMethod[]`)이다. 지금은 둘 다 브라우저 창 방식이고, 다른 방식(이메일, 기기의 네이티브 로그인)은 항목으로 더한다.
+- 브라우저의 웹 로그인과 앱의 로그인은 서로 다른 세션이다(갱신 토큰이 따로다).
+- 아직 없는 것: nonce 검증(위 "모바일의 로그인 중계"), 로그인 도중 앱 프로세스가 죽었을 때의 이어 받기(다시 눌러야 한다), 로그인한 사용자 정보 표시, 공유 확장과의 세션 공유, iOS에서의 확인.
 
 **토큰 (2026-11-11 결정)**
 
