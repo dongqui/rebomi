@@ -235,6 +235,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | 홈 피드 조회, 카드 액션 반영 | `apps/api` |
 | 피드 표시와 액션 UI | `apps/web`, `apps/mobile` |
 | 푸시 발송 | `apps/worker` → 푸시 서비스(미정) → `apps/mobile` |
+| 재노출 이메일 발송 | `apps/worker` → 이메일 발송 서비스(미정) |
 | 노출·액션 이벤트 기록(H2 판단 지표) | `apps/api` — 계측 저장 방식은 미정(**D-18**) |
 
 선정은 규칙 기반이다(P0). 규칙은 [resurfacing](features/resurfacing.md)에 있다.
@@ -293,6 +294,7 @@ iOS Safari: 본문 수신 ├─→ 저장 요청 ─→ URL 정규화·중복 �
 | 모바일 | Expo SDK 58 | iOS Share Extension + App Group, Android Share Intent 구현 방식(Expo config plugin 등) 미정 | capture 구현 시 |
 | 인증 | 직접 구현, Google·Apple 소셜 로그인, 액세스(JWT HS256)+갱신 토큰, `jose`, `@fastify/cookie` (§3) | — | — |
 | 푸시 | — | "모바일 푸시 알림 서비스" — 제공자 미정 | resurfacing 푸시 구현 시 |
+| 이메일 발송 | — | 제공자 미정 (원문에 없다. 2026-11-25에 재노출 이메일이 P0가 됐다) | resurfacing 이메일 구현 시 |
 | 결제 | — | Stripe 또는 앱 내 결제 (D-10) | billing 구현 시 |
 | 테스트 | Vitest (실제 Postgres) | E2E 도구 미정 | 첫 사용자 흐름 연결 검증 시 |
 
